@@ -1,0 +1,15 @@
+# Archivos comprimidos
+*.7z
+*.zip
+
+# Backend (.NET)
+Backend/bin/
+Backend/obj/
+Backend/.vs/
+*.user
+Backend/appsettings.json
+Backend/appsettings.Development.json
+
+# Frontend (Flutter) - complementa Frontend/biblioteca_movil/.gitignore
+Frontend/biblioteca_movil/build/
+Frontend/biblioteca_movil/.dart_tool/

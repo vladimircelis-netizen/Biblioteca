@@ -1,0 +1,36 @@
+
+@baseUrl = http://localhost:5288
+
+### Consultar todos los autores
+GET {{baseUrl}}/api/Autores
+Accept: application/json
+
+
+### Consultar un autor por ID
+GET {{baseUrl}}/api/Autores/2
+Accept: application/json
+
+
+### Registrar un nuevo autor
+POST {{baseUrl}}/api/Autores
+Content-Type: application/json
+
+{
+    "nombre": "Julio",
+    "apellido": "Cortázar",
+    "nacionalidad": "Argentina"
+}
+
+### Actualizar un autor por ID
+PUT {{baseUrl}}/api/Autores/6
+Content-Type: application/json
+
+{
+    "nombre": "Julio",
+    "apellido": "Cortázar",
+    "nacionalidad": "Colombiana"
+}
+
+### Eliminar un autor por ID
+DELETE {{baseUrl}}/api/Autores/2
+Accept: application/json
