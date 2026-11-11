@@ -1,30 +1,70 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
+import 'dart:convert';
 
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:biblioteca_movil/main.dart';
+import 'package:biblioteca_movil/models/usuario.dart';
+import 'package:biblioteca_movil/services/sesion_service.dart';
+import 'package:biblioteca_movil/views/login_view.dart';
+
+// Crear un JWT de prueba con la fecha de vencimiento indicada
+String crearToken(DateTime vencimiento) {
+  String parte(Map<String, dynamic> datos) =>
+      base64Url.encode(utf8.encode(jsonEncode(datos))).replaceAll('=', '');
+
+  final encabezado = parte({'alg': 'HS256', 'typ': 'JWT'});
+  final contenido = parte({
+    'exp': vencimiento.millisecondsSinceEpoch ~/ 1000,
+  });
+
+  return '$encabezado.$contenido.firma';
+}
+
+final usuario = Usuario(
+  id: 1,
+  nombre: 'Ana',
+  apellido: 'Pérez',
+  email: 'ana@correo.com',
+  rol: 'Lector',
+);
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  testWidgets('El login muestra el correo guardado y el enlace al registro',
+      (WidgetTester tester) async {
+    await tester.pumpWidget(
+      const MyApp(
+        pantallaInicial: LoginView(emailInicial: 'ana@correo.com'),
+      ),
+    );
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+    expect(find.text('ana@correo.com'), findsOneWidget);
+    expect(find.text('Regístrate'), findsOneWidget);
+    expect(find.text('Continuar con Google'), findsOneWidget);
+  });
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
+  test('Un token que vence en el futuro está vigente', () {
+    final sesion = Sesion(
+      usuario: usuario,
+      token: crearToken(DateTime.now().add(const Duration(hours: 1))),
+    );
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    expect(sesion.tokenVencido, isFalse);
+  });
+
+  test('Un token que ya venció se detecta como vencido', () {
+    final sesion = Sesion(
+      usuario: usuario,
+      token: crearToken(
+        DateTime.now().subtract(const Duration(minutes: 1)),
+      ),
+    );
+
+    expect(sesion.tokenVencido, isTrue);
+  });
+
+  test('Un token inválido se considera vencido', () {
+    final sesion = Sesion(usuario: usuario, token: 'no-es-un-jwt');
+
+    expect(sesion.tokenVencido, isTrue);
   });
 }

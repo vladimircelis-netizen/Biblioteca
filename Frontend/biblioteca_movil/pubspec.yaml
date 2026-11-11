@@ -40,7 +40,14 @@ dependencies:
   connectivity_plus: ^7.3.2
   pdfrx: ^2.12.0
   just_audio: ^0.10.6
-
+  file_picker: ^13.3.2
+  http_parser: ^4.1.2
+  google_sign_in: ^7.2.0
+  cached_network_image: ^4.0.6
+  flutter_cache_manager: ^3.5.0
+  path_provider: ^2.1.6
+  flutter_secure_storage: ^11.2.0
+  image_picker: ^1.2.4
 dev_dependencies:
   flutter_test:
     sdk: flutter

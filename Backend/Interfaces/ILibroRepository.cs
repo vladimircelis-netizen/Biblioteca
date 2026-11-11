@@ -18,5 +18,6 @@ namespace BibliotecaAPI.Interfaces
             string? rutaPdf,
             string? rutaAudio
         );
+        Task<bool> EliminarArchivoAsync(int id, string tipoArchivo);
     }
 }   

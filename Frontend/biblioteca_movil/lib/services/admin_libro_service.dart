@@ -6,7 +6,9 @@ class AdminLibroService {
   static const String baseUrl =
       'http://localhost:5288/api/libros';
 
-  Future<void> registrarLibro({
+  // Registrar un libro y devolver el ID asignado por la API.
+  // El ID se usa después para subir sus archivos digitales.
+  Future<int> registrarLibro({
     required String titulo,
     required String isbn,
     required int anioPublicacion,
@@ -31,12 +33,12 @@ class AdminLibroService {
 
     if (respuesta.statusCode == 201 ||
         respuesta.statusCode == 200) {
-      return;
+      final datos = jsonDecode(respuesta.body);
+      return datos['id'] as int;
     }
 
     throw Exception(
-      'Error al registrar libro: '
-      '${respuesta.statusCode} - ${respuesta.body}',
+      'Error al registrar libro: ${_obtenerMensaje(respuesta)}',
     );
   }
 
@@ -70,8 +72,7 @@ class AdminLibroService {
     }
 
     throw Exception(
-      'Error al actualizar libro: '
-      '${respuesta.statusCode} - ${respuesta.body}',
+      'Error al actualizar libro: ${_obtenerMensaje(respuesta)}',
     );
   }
 
@@ -92,9 +93,29 @@ class AdminLibroService {
     }
 
     throw Exception(
-      'Error al eliminar libro: '
-      '${respuesta.statusCode} - ${respuesta.body}',
+      'Error al eliminar libro: ${_obtenerMensaje(respuesta)}',
     );
   }
-  
+
+
+  // Obtener un mensaje de error entendible.
+  // 401/403: el token venció o el usuario no es administrador.
+  // Otros: el mensaje que envía la API (ej. "El ISBN ya existe").
+  String _obtenerMensaje(http.Response respuesta) {
+    if (respuesta.statusCode == 401 || respuesta.statusCode == 403) {
+      return 'No tienes permisos de administrador o la sesión expiró. '
+          'Cierra sesión y vuelve a entrar.';
+    }
+
+    try {
+      final datos = jsonDecode(respuesta.body);
+
+      return datos['message'] ??
+          datos['mensaje'] ??
+          '${respuesta.statusCode}';
+    } catch (_) {
+      return '${respuesta.statusCode}';
+    }
+  }
+
 }

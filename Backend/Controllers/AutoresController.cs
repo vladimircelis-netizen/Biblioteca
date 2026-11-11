@@ -1,4 +1,5 @@
 using BibliotecaAPI.Interfaces;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using BibliotecaAPI.DTOs;
 using BibliotecaAPI.Models;
@@ -54,6 +55,8 @@ namespace BibliotecaAPI.Controllers
             return Ok(respuesta);
         }
 
+        // Solo el administrador puede crear, editar o eliminar autores
+        [Authorize(Roles = "Administrador")]
         [HttpPost]
         public async Task<ActionResult<AutorRespuestaDto>> CrearAutor([FromBody] CrearAutorDto dto)
         {
@@ -77,6 +80,7 @@ namespace BibliotecaAPI.Controllers
             return CreatedAtAction(nameof(GetAutor), new { id = nuevoAutor.Id }, respuesta);
         }
 
+        [Authorize(Roles = "Administrador")]
         [HttpPut("{id}")]
         public async Task<IActionResult> ActualizarAutor(
             int id,
@@ -99,6 +103,7 @@ namespace BibliotecaAPI.Controllers
             return NoContent();
         }
 
+        [Authorize(Roles = "Administrador")]
         [HttpDelete("{id}")]
         public async Task<IActionResult> EliminarAutor(int id)
         {

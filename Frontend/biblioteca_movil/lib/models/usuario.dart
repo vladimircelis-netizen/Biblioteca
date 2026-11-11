@@ -25,6 +25,18 @@ class Usuario {
     );
   }
 
+  // Convertir el usuario en JSON para guardarlo
+  // en el celular (sesión guardada)
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'nombre': nombre,
+      'apellido': apellido,
+      'email': email,
+      'rol': rol,
+    };
+  }
+
   // Nombre completo del usuario
   String get nombreCompleto => '$nombre $apellido';
 

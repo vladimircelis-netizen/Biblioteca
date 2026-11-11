@@ -201,4 +201,55 @@ public class CloudinaryService
 
 
 
+    public async Task EliminarArchivoAsync(string? url)
+    {
+        // Si el libro no tenía archivo, no hay nada que eliminar
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            return;
+        }
+
+        // Ejemplo de URL de Cloudinary:
+        // https://res.cloudinary.com/demo/image/upload/v1712345/biblioteca_movil/portadas/abc.jpg
+        const string marcador = "/upload/";
+        var posicion = url.IndexOf(marcador, StringComparison.Ordinal);
+
+        if (posicion < 0)
+        {
+            return;
+        }
+
+        // 1. Tipo de recurso: image (portadas y PDF) o video (audios)
+        var tipoRecurso = url.Contains("/video/upload/")
+            ? ResourceType.Video
+            : ResourceType.Image;
+
+        // 2. Obtener el public_id quitando la versión (v123...) y la extensión
+        var publicId = url[(posicion + marcador.Length)..];
+
+        var primeraBarra = publicId.IndexOf('/');
+
+        if (primeraBarra > 1 &&
+            publicId[0] == 'v' &&
+            publicId[1..primeraBarra].All(char.IsDigit))
+        {
+            publicId = publicId[(primeraBarra + 1)..];
+        }
+
+        var punto = publicId.LastIndexOf('.');
+
+        if (punto > 0)
+        {
+            publicId = publicId[..punto];
+        }
+
+        // 3. Eliminar el archivo de Cloudinary
+        var parametros = new DeletionParams(publicId)
+        {
+            ResourceType = tipoRecurso
+        };
+
+        await _cloudinary.DestroyAsync(parametros);
+    }
+
 }

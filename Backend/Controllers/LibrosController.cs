@@ -1,5 +1,6 @@
 using BibliotecaAPI.Interfaces;
 using BibliotecaAPI.Models;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using BibliotecaAPI.DTOs;
 
@@ -67,6 +68,8 @@ namespace BibliotecaAPI.Controllers
             return Ok(respuesta);
         }
 
+        // Solo el administrador puede crear, editar o eliminar libros
+        [Authorize(Roles = "Administrador")]
         [HttpPost]
         public async Task<ActionResult<LibroRespuestaDto>> Create(CrearLibroDto dto)
         {
@@ -124,6 +127,7 @@ namespace BibliotecaAPI.Controllers
             );
         }
 
+        [Authorize(Roles = "Administrador")]
         [HttpPut("{id}")]
         public async Task<IActionResult> Update(int id, ActualizarLibroDto dto)
         {
@@ -172,6 +176,7 @@ namespace BibliotecaAPI.Controllers
             return NoContent();
         }
 
+        [Authorize(Roles = "Administrador")]
         [HttpDelete("{id}")]
         public async Task<IActionResult> Delete(int id)
         {

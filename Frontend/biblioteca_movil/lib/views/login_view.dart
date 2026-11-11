@@ -1,10 +1,22 @@
 import 'package:flutter/material.dart';
 import '../config/app_colors.dart';
 import '../controllers/auth_controller.dart';
+import '../widgets/boton_google_widget.dart';
 import 'libros_view.dart';
+import 'registro_view.dart';
 
 class LoginView extends StatefulWidget {
-  const LoginView({super.key});
+  // Correo que se escribe automáticamente (último usado)
+  final String? emailInicial;
+
+  // true: se llegó al login porque el token venció
+  final bool sesionVencida;
+
+  const LoginView({
+    super.key,
+    this.emailInicial,
+    this.sesionVencida = false,
+  });
 
   @override
   State<LoginView> createState() => _LoginViewState();
@@ -20,6 +32,29 @@ class _LoginViewState extends State<LoginView> {
 
   bool _mostrarPassword = false;
   bool _cargando = false;
+
+  @override
+  void initState() {
+    super.initState();
+
+    _emailController.text = widget.emailInicial ?? '';
+
+    // Avisar que la sesión venció (después de dibujar la pantalla)
+    if (widget.sesionVencida) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Tu sesión venció. Inicia sesión nuevamente.',
+            ),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      });
+    }
+  }
 
   Future<void> _iniciarSesion() async {
     if (!_formKey.currentState!.validate()) return;
@@ -83,6 +118,71 @@ class _LoginViewState extends State<LoginView> {
         });
       }
     }
+  }
+
+  // INICIAR SESIÓN CON GOOGLE
+  // Si la cuenta no existe, la API la registra automáticamente.
+  Future<void> _iniciarSesionConGoogle() async {
+    setState(() {
+      _cargando = true;
+    });
+
+    try {
+      final completado =
+          await _authController.iniciarSesionConGoogle();
+
+      // El usuario cerró la ventana de Google
+      if (!completado || !mounted) return;
+
+      final usuario = _authController.usuarioActual;
+
+      if (usuario == null) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            'Bienvenido, ${usuario.nombre}',
+          ),
+        ),
+      );
+
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (context) => LibrosView(
+            usuario: usuario,
+            token: _authController.token!,
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            e.toString().replaceFirst('Exception: ', ''),
+          ),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _cargando = false;
+        });
+      }
+    }
+  }
+
+  // Abrir la pantalla de registro
+  void _abrirRegistro() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => const RegistroView(),
+      ),
+    );
   }
 
   @override
@@ -208,6 +308,32 @@ class _LoginViewState extends State<LoginView> {
                   const SizedBox(height: 20),
                   const CircularProgressIndicator(),
                 ],
+
+                const SizedBox(height: 20),
+
+                const SeparadorOWidget(),
+
+                const SizedBox(height: 20),
+
+                // Botón iniciar sesión con Google
+                BotonGoogleWidget(
+                  texto: 'Continuar con Google',
+                  onPressed: _cargando ? null : _iniciarSesionConGoogle,
+                ),
+
+                const SizedBox(height: 16),
+
+                // Ir a la pantalla de registro
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Text('¿No tienes una cuenta?'),
+                    TextButton(
+                      onPressed: _cargando ? null : _abrirRegistro,
+                      child: const Text('Regístrate'),
+                    ),
+                  ],
+                ),
               ],
             ),
           ),

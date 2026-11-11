@@ -86,6 +86,49 @@ public class UsuariosController : ControllerBase
     }
 
 
+    // Registro e inicio de sesión con Google
+    [HttpPost("google")]
+    public async Task<IActionResult> LoginConGoogle(
+        [FromBody] GoogleLoginDto dto)
+    {
+        try
+        {
+            var usuario = await _service.LoginConGoogleAsync(dto);
+
+            // Generar el token JWT de nuestra API
+            string token = _jwtService.GenerarToken(usuario);
+
+            return Ok(new
+            {
+                mensaje = "Inicio de sesión con Google exitoso",
+                token = token,
+                usuario = new
+                {
+                    usuario.Id,
+                    usuario.Nombre,
+                    usuario.Apellido,
+                    usuario.Email,
+                    usuario.Rol
+                }
+            });
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return Unauthorized(new
+            {
+                mensaje = ex.Message
+            });
+        }
+        catch (InvalidOperationException ex)
+        {
+            return StatusCode(500, new
+            {
+                mensaje = ex.Message
+            });
+        }
+    }
+
+
     [Authorize]
     [HttpGet("perfil")]
     public IActionResult ObtenerPerfil()

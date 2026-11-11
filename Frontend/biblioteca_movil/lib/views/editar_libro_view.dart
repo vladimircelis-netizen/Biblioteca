@@ -1,11 +1,16 @@
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 
 import '../config/app_colors.dart';
 import '../models/libro.dart';
 import '../models/autor.dart';
+import '../models/tipo_archivo.dart';
 import '../services/autor_service.dart';
 import '../services/admin_libro_service.dart';
+import '../services/archivo_service.dart';
+import '../widgets/selector_archivo_widget.dart';
+import 'registrar_autor_view.dart';
 
 class EditarLibroView extends StatefulWidget {
   final Libro libro;
@@ -26,6 +31,7 @@ class _EditarLibroViewState extends State<EditarLibroView> {
 
   final _libroService = AdminLibroService();
   final _autorService = AutorService();
+  final _archivoService = ArchivoService();
 
   late TextEditingController _tituloController;
   late TextEditingController _isbnController;
@@ -36,6 +42,18 @@ class _EditarLibroViewState extends State<EditarLibroView> {
 
   int? _autorSeleccionado;
   bool _guardando = false;
+
+  // Cambia al crear un autor para redibujar la lista de autores
+  int _versionAutores = 0;
+
+  // Mensaje del paso actual: "Subiendo PDF..."
+  String? _estado;
+
+  // Archivos nuevos elegidos (reemplazan al actual)
+  final Map<TipoArchivo, PlatformFile> _archivosNuevos = {};
+
+  // Archivos actuales que se eliminarán al guardar
+  final Set<TipoArchivo> _archivosPorEliminar = {};
 
   @override
   void initState() {
@@ -68,14 +86,66 @@ class _EditarLibroViewState extends State<EditarLibroView> {
     super.dispose();
   }
 
+
+  // Ruta guardada en la nube para cada tipo de archivo.
+  // Las rutas de assets (demo) no se pueden editar.
+  String? _rutaActual(TipoArchivo tipo) {
+    final ruta = switch (tipo) {
+      TipoArchivo.portada => widget.libro.rutaPortada,
+      TipoArchivo.pdf => widget.libro.rutaPdf,
+      TipoArchivo.audio => widget.libro.rutaAudio,
+    };
+
+    if (ruta == null || !ruta.startsWith('http')) return null;
+
+    return ruta;
+  }
+
+
+  // Crear un autor sin salir del formulario.
+  // El autor nuevo se agrega a la lista y queda seleccionado.
+  Future<void> _crearAutor() async {
+    final autor = await Navigator.push<Autor>(
+      context,
+      MaterialPageRoute(
+        builder: (context) => RegistrarAutorView(
+          token: widget.token,
+        ),
+      ),
+    );
+
+    if (autor == null || !mounted) return;
+
+    setState(() {
+      _autores = _autores.then((lista) => [...lista, autor]);
+      _autorSeleccionado = autor.id;
+      _versionAutores++;
+    });
+  }
+
+
+  Future<void> _elegirArchivo(TipoArchivo tipo) async {
+    final archivo = await seleccionarArchivo(context, tipo);
+
+    if (archivo == null || !mounted) return;
+
+    setState(() {
+      _archivosNuevos[tipo] = archivo;
+      _archivosPorEliminar.remove(tipo);
+    });
+  }
+
+
   Future<void> _guardarCambios() async {
     if (!_formKey.currentState!.validate()) return;
 
     setState(() {
       _guardando = true;
+      _estado = 'Guardando datos del libro...';
     });
 
     try {
+      // 1. Actualizar los datos del libro en MySQL
       await _libroService.actualizarLibro(
         id: widget.libro.id,
         titulo: _tituloController.text.trim(),
@@ -86,13 +156,69 @@ class _EditarLibroViewState extends State<EditarLibroView> {
         token: widget.token,
       );
 
+      final errores = <String>[];
+
+      // 2. Subir los archivos nuevos (reemplazan a los actuales)
+      for (final entrada in _archivosNuevos.entries) {
+        if (!mounted) return;
+
+        setState(() {
+          _estado = 'Subiendo ${entrada.key.nombre.toLowerCase()}...';
+        });
+
+        try {
+          await _archivoService.subirArchivo(
+            libroId: widget.libro.id,
+            tipo: entrada.key,
+            archivo: entrada.value,
+            token: widget.token,
+          );
+        } catch (e) {
+          errores.add(e.toString().replaceFirst('Exception: ', ''));
+        }
+      }
+
+      // 3. Eliminar los archivos marcados
+      for (final tipo in _archivosPorEliminar) {
+        if (!mounted) return;
+
+        setState(() {
+          _estado = 'Eliminando ${tipo.nombre.toLowerCase()}...';
+        });
+
+        try {
+          await _archivoService.eliminarArchivo(
+            libroId: widget.libro.id,
+            tipo: tipo,
+            token: widget.token,
+          );
+        } catch (e) {
+          errores.add(e.toString().replaceFirst('Exception: ', ''));
+        }
+      }
+
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Libro actualizado correctamente'),
-        ),
-      );
+      // 4. Informar el resultado
+      if (errores.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Libro actualizado correctamente'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Datos actualizados, pero hubo problemas:\n'
+              '${errores.join('\n')}',
+            ),
+            backgroundColor: Colors.orange,
+            duration: const Duration(seconds: 6),
+          ),
+        );
+      }
 
       Navigator.pop(context, true);
     } catch (e) {
@@ -103,12 +229,14 @@ class _EditarLibroViewState extends State<EditarLibroView> {
           content: Text(
             e.toString().replaceFirst('Exception: ', ''),
           ),
+          backgroundColor: Colors.red,
         ),
       );
     } finally {
       if (mounted) {
         setState(() {
           _guardando = false;
+          _estado = null;
         });
       }
     }
@@ -152,9 +280,20 @@ class _EditarLibroViewState extends State<EditarLibroView> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
+                  const Text(
+                    'Datos del libro',
+                    style: TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+
+                  const SizedBox(height: 20),
+
                   TextFormField(
                     controller: _tituloController,
                     maxLength: 200,
+                    enabled: !_guardando,
                     decoration: const InputDecoration(
                       labelText: 'Título',
                       border: OutlineInputBorder(),
@@ -171,6 +310,8 @@ class _EditarLibroViewState extends State<EditarLibroView> {
 
                   TextFormField(
                     controller: _isbnController,
+                    keyboardType: TextInputType.number,
+                    enabled: !_guardando,
                     decoration: const InputDecoration(
                       labelText: 'ISBN',
                       border: OutlineInputBorder(),
@@ -185,11 +326,12 @@ class _EditarLibroViewState extends State<EditarLibroView> {
                     },
                   ),
 
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 16),
 
                   TextFormField(
                     controller: _anioController,
                     keyboardType: TextInputType.number,
+                    enabled: !_guardando,
                     decoration: const InputDecoration(
                       labelText: 'Año de publicación',
                       border: OutlineInputBorder(),
@@ -203,11 +345,12 @@ class _EditarLibroViewState extends State<EditarLibroView> {
                     },
                   ),
 
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 16),
 
                   TextFormField(
                     controller: _stockController,
                     keyboardType: TextInputType.number,
+                    enabled: !_guardando,
                     decoration: const InputDecoration(
                       labelText: 'Stock',
                       border: OutlineInputBorder(),
@@ -221,10 +364,11 @@ class _EditarLibroViewState extends State<EditarLibroView> {
                     },
                   ),
 
-                  const SizedBox(height: 12),
+                  const SizedBox(height: 16),
 
                   DropdownButtonFormField<int>(
-                    value: autorDisponible
+                    key: ValueKey('autores_$_versionAutores'),
+                    initialValue: autorDisponible
                         ? _autorSeleccionado
                         : null,
                     decoration: const InputDecoration(
@@ -237,11 +381,13 @@ class _EditarLibroViewState extends State<EditarLibroView> {
                         child: Text(autor.nombreCompleto),
                       );
                     }).toList(),
-                    onChanged: (valor) {
-                      setState(() {
-                        _autorSeleccionado = valor;
-                      });
-                    },
+                    onChanged: _guardando
+                        ? null
+                        : (valor) {
+                            setState(() {
+                              _autorSeleccionado = valor;
+                            });
+                          },
                     validator: (valor) {
                       if (valor == null) {
                         return 'Seleccione un autor';
@@ -250,14 +396,85 @@ class _EditarLibroViewState extends State<EditarLibroView> {
                     },
                   ),
 
-                  const SizedBox(height: 24),
+                  // Crear el autor si no está en la lista
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton.icon(
+                      onPressed: _guardando ? null : _crearAutor,
+                      icon: const Icon(Icons.person_add_alt_1),
+                      label: const Text('Nuevo autor'),
+                    ),
+                  ),
 
-                  ElevatedButton(
+                  const SizedBox(height: 16),
+
+                  // ARCHIVOS DIGITALES
+                  const Text(
+                    'Archivos digitales',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+
+                  const SizedBox(height: 4),
+
+                  const Text(
+                    'Los cambios en los archivos se aplican al guardar.',
+                    style: TextStyle(
+                      color: AppColors.textoSecundario,
+                    ),
+                  ),
+
+                  const SizedBox(height: 12),
+
+                  for (final tipo in TipoArchivo.values)
+                    SelectorArchivoWidget(
+                      tipo: tipo,
+                      rutaActual: _rutaActual(tipo),
+                      archivoSeleccionado: _archivosNuevos[tipo],
+                      marcadoParaEliminar:
+                          _archivosPorEliminar.contains(tipo),
+                      habilitado: !_guardando,
+                      onSeleccionar: () => _elegirArchivo(tipo),
+                      onQuitarSeleccion: () {
+                        setState(() {
+                          _archivosNuevos.remove(tipo);
+                          _archivosPorEliminar.remove(tipo);
+                        });
+                      },
+                      onEliminarActual: () {
+                        setState(() {
+                          _archivosPorEliminar.add(tipo);
+                        });
+                      },
+                    ),
+
+                  const SizedBox(height: 16),
+
+                  // Progreso del guardado
+                  if (_estado != null) ...[
+                    const LinearProgressIndicator(),
+                    const SizedBox(height: 8),
+                    Text(
+                      _estado!,
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 16),
+                  ],
+
+                  ElevatedButton.icon(
                     onPressed: _guardando ? null : _guardarCambios,
-                    child: Text(
+                    icon: const Icon(Icons.save),
+                    label: Text(
                       _guardando
                           ? 'Guardando...'
                           : 'Guardar cambios',
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AppColors.primario,
+                      foregroundColor: AppColors.tarjeta,
+                      padding: const EdgeInsets.all(16),
                     ),
                   ),
                 ],

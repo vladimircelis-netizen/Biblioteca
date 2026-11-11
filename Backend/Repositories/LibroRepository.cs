@@ -89,6 +89,40 @@ namespace BibliotecaAPI.Repositories
         }
 
 
+        public async Task<bool> EliminarArchivoAsync(int id, string tipoArchivo)
+        {
+            var libro = await _context.Libros.FindAsync(id);
+
+            if (libro == null)
+            {
+                return false;
+            }
+
+            // Quitar únicamente la ruta del archivo indicado
+            switch (tipoArchivo)
+            {
+                case "portada":
+                    libro.RutaPortada = null;
+                    break;
+
+                case "pdf":
+                    libro.RutaPdf = null;
+                    break;
+
+                case "audio":
+                    libro.RutaAudio = null;
+                    break;
+
+                default:
+                    return false;
+            }
+
+            await _context.SaveChangesAsync();
+
+            return true;
+        }
+
+
         public async Task<bool> DeleteAsync(int id)
         {
             var libro = await _context.Libros.FindAsync(id);

@@ -5,6 +5,7 @@ import '../controllers/libro_controller.dart';
 import '../models/libro.dart';
 import 'editar_libro_view.dart';
 import '../services/admin_libro_service.dart';
+import '../widgets/portada_libro_widget.dart';
 
 class GestionarLibrosView extends StatefulWidget {
   final String token;
@@ -161,9 +162,10 @@ class _GestionarLibrosViewState
                 margin: const EdgeInsets.only(bottom: 12),
 
                 child: ListTile(
-                  leading: const Icon(
-                    Icons.menu_book,
-                    color: AppColors.primario,
+                  leading: PortadaLibroWidget(
+                    rutaPortada: libro.rutaPortada,
+                    ancho: 40,
+                    alto: 60,
                   ),
 
                   title: Text(libro.titulo),

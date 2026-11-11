@@ -1,9 +1,14 @@
 
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import '../config/app_colors.dart';
 import '../models/autor.dart';
+import '../models/tipo_archivo.dart';
 import '../services/autor_service.dart';
 import '../services/admin_libro_service.dart';
+import '../services/archivo_service.dart';
+import '../widgets/selector_archivo_widget.dart';
+import 'registrar_autor_view.dart';
 
 class RegistrarLibroView extends StatefulWidget {
   final String token;
@@ -30,11 +35,21 @@ class _RegistrarLibroViewState
 
   final AutorService _autorService = AutorService();
   final AdminLibroService _libroService = AdminLibroService();
+  final ArchivoService _archivoService = ArchivoService();
 
   bool _guardando = false;
 
+  // Mensaje del paso actual: "Subiendo portada..."
+  String? _estado;
+
   late Future<List<Autor>> _autores;
   int? _autorSeleccionado;
+
+  // Cambia al crear un autor para redibujar la lista de autores
+  int _versionAutores = 0;
+
+  // Archivos elegidos en el dispositivo (opcionales)
+  final Map<TipoArchivo, PlatformFile> _archivos = {};
 
   @override
   void initState() {
@@ -51,7 +66,40 @@ class _RegistrarLibroViewState
     super.dispose();
   }
 
-  
+
+  // Crear un autor sin salir del formulario.
+  // El autor nuevo se agrega a la lista y queda seleccionado.
+  Future<void> _crearAutor() async {
+    final autor = await Navigator.push<Autor>(
+      context,
+      MaterialPageRoute(
+        builder: (context) => RegistrarAutorView(
+          token: widget.token,
+        ),
+      ),
+    );
+
+    if (autor == null || !mounted) return;
+
+    setState(() {
+      _autores = _autores.then((lista) => [...lista, autor]);
+      _autorSeleccionado = autor.id;
+      _versionAutores++;
+    });
+  }
+
+
+  Future<void> _elegirArchivo(TipoArchivo tipo) async {
+    final archivo = await seleccionarArchivo(context, tipo);
+
+    if (archivo == null || !mounted) return;
+
+    setState(() {
+      _archivos[tipo] = archivo;
+    });
+  }
+
+
   Future<void> _guardarLibro() async {
     if (!_formKey.currentState!.validate()) return;
 
@@ -59,10 +107,12 @@ class _RegistrarLibroViewState
 
     setState(() {
       _guardando = true;
+      _estado = 'Guardando datos del libro...';
     });
 
     try {
-      await _libroService.registrarLibro(
+      // 1. Registrar los datos del libro en MySQL
+      final libroId = await _libroService.registrarLibro(
         titulo: _tituloController.text.trim(),
         isbn: _isbnController.text.trim(),
         anioPublicacion: int.parse(_anioController.text.trim()),
@@ -71,14 +121,55 @@ class _RegistrarLibroViewState
         token: widget.token,
       );
 
+      // 2. Subir los archivos elegidos a Cloudinary
+      final errores = <String>[];
+
+      for (final entrada in _archivos.entries) {
+        if (!mounted) return;
+
+        setState(() {
+          _estado = 'Subiendo ${entrada.key.nombre.toLowerCase()}...';
+        });
+
+        try {
+          await _archivoService.subirArchivo(
+            libroId: libroId,
+            tipo: entrada.key,
+            archivo: entrada.value,
+            token: widget.token,
+          );
+        } catch (e) {
+          errores.add(
+            e.toString().replaceFirst('Exception: ', ''),
+          );
+        }
+      }
+
       if (!mounted) return;
 
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('Libro registrado correctamente'),
-          backgroundColor: Colors.green,
-        ),
-      );
+      // 3. Informar el resultado
+      if (errores.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Libro registrado correctamente'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      } else {
+        // El libro sí se registró: los archivos que fallaron
+        // se pueden subir después desde "Archivos digitales".
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Libro registrado, pero hubo problemas:\n'
+              '${errores.join('\n')}\n'
+              'Puedes subirlos desde "Archivos digitales".',
+            ),
+            backgroundColor: Colors.orange,
+            duration: const Duration(seconds: 6),
+          ),
+        );
+      }
 
       Navigator.pop(context, true);
 
@@ -97,6 +188,7 @@ class _RegistrarLibroViewState
       if (mounted) {
         setState(() {
           _guardando = false;
+          _estado = null;
         });
       }
     }
@@ -152,6 +244,7 @@ class _RegistrarLibroViewState
                   TextFormField(
                     controller: _tituloController,
                     maxLength: 200,
+                    enabled: !_guardando,
                     decoration: const InputDecoration(
                       labelText: 'Título',
                       border: OutlineInputBorder(),
@@ -170,6 +263,7 @@ class _RegistrarLibroViewState
                   TextFormField(
                     controller: _isbnController,
                     keyboardType: TextInputType.number,
+                    enabled: !_guardando,
                     decoration: const InputDecoration(
                       labelText: 'ISBN',
                       border: OutlineInputBorder(),
@@ -189,6 +283,7 @@ class _RegistrarLibroViewState
                   TextFormField(
                     controller: _anioController,
                     keyboardType: TextInputType.number,
+                    enabled: !_guardando,
                     decoration: const InputDecoration(
                       labelText: 'Año de publicación',
                       border: OutlineInputBorder(),
@@ -209,6 +304,7 @@ class _RegistrarLibroViewState
                   TextFormField(
                     controller: _stockController,
                     keyboardType: TextInputType.number,
+                    enabled: !_guardando,
                     decoration: const InputDecoration(
                       labelText: 'Stock',
                       border: OutlineInputBorder(),
@@ -225,6 +321,8 @@ class _RegistrarLibroViewState
                   const SizedBox(height: 16),
 
                   DropdownButtonFormField<int>(
+                    key: ValueKey('autores_$_versionAutores'),
+                    initialValue: _autorSeleccionado,
                     decoration: const InputDecoration(
                       labelText: 'Autor',
                       border: OutlineInputBorder(),
@@ -235,11 +333,13 @@ class _RegistrarLibroViewState
                         child: Text(autor.nombreCompleto),
                       );
                     }).toList(),
-                    onChanged: (valor) {
-                      setState(() {
-                        _autorSeleccionado = valor;
-                      });
-                    },
+                    onChanged: _guardando
+                        ? null
+                        : (valor) {
+                            setState(() {
+                              _autorSeleccionado = valor;
+                            });
+                          },
                     validator: (valor) {
                       if (valor == null) {
                         return 'Selecciona un autor';
@@ -248,12 +348,70 @@ class _RegistrarLibroViewState
                     },
                   ),
 
-                  const SizedBox(height: 24),
+                  // Crear el autor si no está en la lista
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton.icon(
+                      onPressed: _guardando ? null : _crearAutor,
+                      icon: const Icon(Icons.person_add_alt_1),
+                      label: const Text('Nuevo autor'),
+                    ),
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  // ARCHIVOS DIGITALES
+                  const Text(
+                    'Archivos digitales (opcional)',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+
+                  const SizedBox(height: 4),
+
+                  const Text(
+                    'Se subirán a la nube al guardar el libro.',
+                    style: TextStyle(
+                      color: AppColors.textoSecundario,
+                    ),
+                  ),
+
+                  const SizedBox(height: 12),
+
+                  for (final tipo in TipoArchivo.values)
+                    SelectorArchivoWidget(
+                      tipo: tipo,
+                      archivoSeleccionado: _archivos[tipo],
+                      habilitado: !_guardando,
+                      onSeleccionar: () => _elegirArchivo(tipo),
+                      onQuitarSeleccion: () {
+                        setState(() {
+                          _archivos.remove(tipo);
+                        });
+                      },
+                    ),
+
+                  const SizedBox(height: 16),
+
+                  // Progreso del guardado
+                  if (_estado != null) ...[
+                    const LinearProgressIndicator(),
+                    const SizedBox(height: 8),
+                    Text(
+                      _estado!,
+                      textAlign: TextAlign.center,
+                    ),
+                    const SizedBox(height: 16),
+                  ],
 
                   ElevatedButton.icon(
                     onPressed: _guardando ? null : _guardarLibro,
                     icon: const Icon(Icons.save),
-                    label: const Text('Guardar libro'),
+                    label: Text(
+                      _guardando ? 'Guardando...' : 'Guardar libro',
+                    ),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppColors.primario,
                       foregroundColor: AppColors.tarjeta,

@@ -35,7 +35,15 @@ class _ReproductorAudioViewState
 
   Future<void> cargarAudio() async {
     try {
-      await _reproductor.setAsset(widget.rutaAudio);
+      // URL de Cloudinary, assets de la app (demo)
+      // o archivo descargado en el celular
+      if (widget.rutaAudio.startsWith('http')) {
+        await _reproductor.setUrl(widget.rutaAudio);
+      } else if (widget.rutaAudio.startsWith('assets/')) {
+        await _reproductor.setAsset(widget.rutaAudio);
+      } else {
+        await _reproductor.setFilePath(widget.rutaAudio);
+      }
 
       if (!mounted) return;
 

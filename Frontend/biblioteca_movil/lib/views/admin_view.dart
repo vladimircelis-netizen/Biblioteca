@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import '../config/app_colors.dart';
 import 'registrar_libro_view.dart';
 import 'gestionar_libros_view.dart';
+import 'archivos_digitales_view.dart';
+import 'registrar_autor_view.dart';
 
 class AdminView extends StatelessWidget {
   final String token;
@@ -50,6 +52,25 @@ class AdminView extends StatelessWidget {
 
           Card(
             child: ListTile(
+              leading: const Icon(Icons.person_add_alt_1),
+              title: const Text('Registrar autor'),
+              subtitle: const Text('Agregar un nuevo autor'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => RegistrarAutorView(
+                      token: token,
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+
+          Card(
+            child: ListTile(
               leading: const Icon(Icons.edit),
               title: const Text('Gestionar libros'),
               subtitle: const Text('Editar o eliminar libros'),
@@ -73,7 +94,16 @@ class AdminView extends StatelessWidget {
               title: const Text('Archivos digitales'),
               subtitle: const Text('Subir PDF, MP3 y portadas'),
               trailing: const Icon(Icons.chevron_right),
-              onTap: () {},
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => ArchivosDigitalesView(
+                      token: token,
+                    ),
+                  ),
+                );
+              },
             ),
           ),
         ],

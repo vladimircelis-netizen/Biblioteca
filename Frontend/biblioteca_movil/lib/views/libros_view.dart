@@ -9,6 +9,9 @@ import '../services/connectivity_service.dart';
 import '../models/usuario.dart';
 import 'login_view.dart';
 import 'admin_view.dart';
+import '../widgets/portada_libro_widget.dart';
+import '../controllers/auth_controller.dart';
+import '../services/sesion_service.dart';
 
 class LibrosView extends StatefulWidget {
   
@@ -82,6 +85,79 @@ class _LibrosViewState extends State<LibrosView> {
     });
   }
 
+  // Activar o desactivar el modo sin conexión (ícono de wifi)
+  void cambiarModoConexion() {
+    // Si se vuelve a conectar con el token vencido
+    // (se entró sin internet), hay que iniciar sesión de nuevo
+    if (ConnectivityService.modoSinConexion.value &&
+        Sesion(usuario: widget.usuario, token: widget.token)
+            .tokenVencido) {
+      ConnectivityService.establecerModoSinConexion(false);
+
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(
+          builder: (context) => LoginView(
+            emailInicial: widget.usuario.email,
+            sesionVencida: true,
+          ),
+        ),
+        (route) => false,
+      );
+      return;
+    }
+
+    ConnectivityService.cambiarModoSinConexion();
+
+    final sinConexion = ConnectivityService.modoSinConexion.value;
+
+    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          sinConexion
+              ? 'Modo sin conexión: se muestran los libros guardados'
+              : _tieneConexion
+                  ? 'Conectado: actualizando libros desde el servidor'
+                  : 'Modo en línea activado, pero el celular no tiene internet',
+        ),
+        backgroundColor: sinConexion ? Colors.orange : Colors.green,
+      ),
+    );
+
+    // Volver a cargar los libros con el nuevo modo
+    actualizarLibros();
+  }
+
+  // Ícono según el modo y la conexión real del celular
+  Widget _iconoConexion() {
+    final sinConexion = ConnectivityService.modoSinConexion.value;
+
+    IconData icono;
+    Color color;
+    String descripcion;
+
+    if (sinConexion) {
+      icono = Icons.wifi_off;
+      color = Colors.orangeAccent;
+      descripcion = 'Modo sin conexión. Toca para conectar';
+    } else if (_tieneConexion) {
+      icono = Icons.wifi;
+      color = Colors.greenAccent;
+      descripcion = 'Conectado. Toca para trabajar sin conexión';
+    } else {
+      icono = Icons.signal_wifi_connected_no_internet_4;
+      color = Colors.white70;
+      descripcion = 'El celular no tiene internet';
+    }
+
+    return IconButton(
+      icon: Icon(icono, color: color),
+      tooltip: descripcion,
+      onPressed: cambiarModoConexion,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -98,6 +174,20 @@ class _LibrosViewState extends State<LibrosView> {
               icon: const Icon(Icons.admin_panel_settings),
               tooltip: 'Panel de administración',
               onPressed: () {
+                // La administración necesita la API
+                if (ConnectivityService.modoSinConexion.value) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        'Activa la conexión (ícono de wifi) '
+                        'para administrar la biblioteca',
+                      ),
+                      backgroundColor: Colors.orange,
+                    ),
+                  );
+                  return;
+                }
+
                 Navigator.push(
                   context,
                   MaterialPageRoute(
@@ -115,12 +205,19 @@ class _LibrosViewState extends State<LibrosView> {
           PopupMenuButton<String>(
             icon: const Icon(Icons.account_circle),
             tooltip: 'Mi cuenta',
-            onSelected: (opcion) {
+            onSelected: (opcion) async {
               if (opcion == 'salir') {
+                // Borrar la sesión guardada y cerrar la de Google
+                await AuthController().cerrarSesion();
+
+                if (!context.mounted) return;
+
                 Navigator.pushAndRemoveUntil(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => const LoginView(),
+                    builder: (context) => LoginView(
+                      emailInicial: widget.usuario.email,
+                    ),
                   ),
                   (route) => false,
                 );
@@ -155,11 +252,8 @@ class _LibrosViewState extends State<LibrosView> {
               ),
             ],
           ),
-          Icon(
-            _tieneConexion ? Icons.wifi : Icons.wifi_off,
-            color: _tieneConexion ? Colors.greenAccent : Colors.white70,
-          ),
-          const SizedBox(width: 8),
+          // Conectar o desconectar la aplicación
+          _iconoConexion(),
 
           IconButton(
             icon: const Icon(Icons.refresh),
@@ -171,6 +265,28 @@ class _LibrosViewState extends State<LibrosView> {
 
       body: Column(
         children: [
+          // Aviso del modo sin conexión
+          if (ConnectivityService.modoSinConexion.value)
+            Container(
+              width: double.infinity,
+              color: Colors.orange.shade100,
+              padding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 8,
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.cloud_off, size: 18, color: Colors.orange),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Modo sin conexión: mostrando los libros guardados',
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
           // Campo para buscar libros
           Padding(
             padding: const EdgeInsets.all(12),
@@ -251,9 +367,10 @@ class _LibrosViewState extends State<LibrosView> {
                       margin: const EdgeInsets.all(10),
 
                       child: ListTile(
-                        leading: const Icon(
-                          Icons.menu_book,
-                          color: AppColors.primario,
+                        leading: PortadaLibroWidget(
+                          rutaPortada: libro.rutaPortada,
+                          ancho: 40,
+                          alto: 60,
                         ),
 
                         title: Text(libro.titulo),

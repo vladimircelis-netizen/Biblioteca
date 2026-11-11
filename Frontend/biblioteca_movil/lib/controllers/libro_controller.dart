@@ -8,4 +8,9 @@ class LibroController {
   Future<List<Libro>> listarLibros() async {
     return await _service.obtenerLibros();
   }
+
+  // Libros tal como están en el servidor (para administración)
+  Future<List<Libro>> listarLibrosServidor() async {
+    return await _service.obtenerLibrosServidor();
+  }
 }

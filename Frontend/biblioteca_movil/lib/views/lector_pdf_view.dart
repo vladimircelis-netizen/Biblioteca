@@ -18,7 +18,23 @@ class LectorPdfView extends StatelessWidget {
       appBar: AppBar(
         title: Text(titulo),
       ),
-      body: PdfViewer.asset(rutaPdf),
+      body: _visorPdf(),
     );
+  }
+
+  // El PDF puede venir de:
+  // - Cloudinary (URL)
+  // - Los assets de la app (demo)
+  // - Un archivo descargado en el celular (ruta absoluta)
+  Widget _visorPdf() {
+    if (rutaPdf.startsWith('http')) {
+      return PdfViewer.uri(Uri.parse(rutaPdf));
+    }
+
+    if (rutaPdf.startsWith('assets/')) {
+      return PdfViewer.asset(rutaPdf);
+    }
+
+    return PdfViewer.file(rutaPdf);
   }
 }
