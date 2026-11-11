@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import '../config/api_config.dart';
 
 import '../models/libro.dart';
 import 'database_service.dart';
@@ -9,7 +10,7 @@ import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'connectivity_service.dart';
 
 class LibroService {
-  final String url = 'http://localhost:5288/api/libros';
+  final String url = '${ApiConfig.baseUrl}/libros';
 
   final DatabaseService _databaseService = DatabaseService();
 
@@ -26,7 +27,7 @@ class LibroService {
       // 1. Intentamos consultar la API
       final respuesta = await http
           .get(Uri.parse(url))
-          .timeout(const Duration(seconds: 5));
+          .timeout(ApiConfig.tiempoEspera);
 
       if (respuesta.statusCode == 200) {
         debugPrint('API conectada correctamente: 200 OK');
@@ -135,7 +136,7 @@ class LibroService {
   Future<List<Libro>> obtenerLibrosServidor() async {
     final respuesta = await http
         .get(Uri.parse(url))
-        .timeout(const Duration(seconds: 10));
+        .timeout(ApiConfig.tiempoEspera);
 
     if (respuesta.statusCode == 200) {
       final List<dynamic> datos = jsonDecode(respuesta.body);

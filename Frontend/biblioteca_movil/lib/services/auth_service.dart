@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'package:http/http.dart' as http;
+import '../config/api_config.dart';
 
 import '../models/usuario.dart';
 
@@ -31,7 +32,7 @@ class CorreoRegistradoException implements Exception {
 class AuthService {
   // Dirección de nuestra API Biblioteca
   static const String baseUrl =
-      'http://localhost:5288/api/usuarios';
+      '${ApiConfig.baseUrl}/usuarios';
 
   // Enviar un POST con tiempo límite.
   // Si no hay conexión lanza SinConexionException.
@@ -45,7 +46,7 @@ class AuthService {
             },
             body: jsonEncode(datos),
           )
-          .timeout(const Duration(seconds: 10));
+          .timeout(ApiConfig.tiempoEspera);
     } on SocketException {
       throw SinConexionException();
     } on TimeoutException {

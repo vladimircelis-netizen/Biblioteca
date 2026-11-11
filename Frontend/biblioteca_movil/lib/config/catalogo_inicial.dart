@@ -42,7 +42,7 @@ class CatalogoInicial {
       anioPublicacion: 2016,
       stock: 4,
       autorId: 2,
-      nombreAutor: 'Agustín Laje',
+      nombreAutor: 'Nicolas Marquez',
       rutaPortada: 'assets/portadas/nueva_izquierda.jpg',
       rutaPdf: 'assets/libros/pdf/El_LIBRO_NEGRO.pdf',
     ),

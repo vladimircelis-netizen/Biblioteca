@@ -2,13 +2,14 @@
 import 'dart:convert';
 import 'package:file_picker/file_picker.dart';
 import 'package:http/http.dart' as http;
+import '../config/api_config.dart';
 import 'package:http_parser/http_parser.dart';
 
 import '../models/tipo_archivo.dart';
 
 class ArchivoService {
   static const String baseUrl =
-      'http://localhost:5288/api/archivos';
+      '${ApiConfig.baseUrl}/archivos';
 
   // Subir la portada, el PDF o el audio de un libro a Cloudinary.
   // Si el libro ya tenía ese archivo, el backend lo reemplaza.

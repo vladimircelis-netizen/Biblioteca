@@ -1,10 +1,11 @@
 
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import '../config/api_config.dart';
 
 class AdminLibroService {
   static const String baseUrl =
-      'http://localhost:5288/api/libros';
+      '${ApiConfig.baseUrl}/libros';
 
   // Registrar un libro y devolver el ID asignado por la API.
   // El ID se usa después para subir sus archivos digitales.

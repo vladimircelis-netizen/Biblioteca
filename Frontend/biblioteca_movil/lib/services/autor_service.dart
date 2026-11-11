@@ -1,11 +1,12 @@
 
 import 'dart:convert';
 import 'package:http/http.dart' as http;
+import '../config/api_config.dart';
 import '../models/autor.dart';
 
 class AutorService {
   static const String baseUrl =
-      'http://localhost:5288/api/autores';
+      '${ApiConfig.baseUrl}/autores';
 
   Future<List<Autor>> listarAutores() async {
     final respuesta = await http.get(

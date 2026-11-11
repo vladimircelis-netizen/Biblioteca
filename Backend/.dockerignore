@@ -1,0 +1,9 @@
+bin/
+obj/
+.vs/
+*.user
+*.http
+
+# Configuración local con contraseñas: nunca va en la imagen
+appsettings.json
+appsettings.Development.json
