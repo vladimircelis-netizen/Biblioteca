@@ -1,29 +1,68 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'package:http/http.dart' as http;
 
 import '../models/usuario.dart';
+
+// No se pudo contactar con la API (sin internet o servidor apagado)
+class SinConexionException implements Exception {
+  final String mensaje;
+
+  SinConexionException([
+    this.mensaje = 'No hay conexión con el servidor',
+  ]);
+
+  @override
+  String toString() => mensaje;
+}
+
+// El correo ya tiene una cuenta en el servidor
+class CorreoRegistradoException implements Exception {
+  final String mensaje;
+
+  CorreoRegistradoException(this.mensaje);
+
+  @override
+  String toString() => mensaje;
+}
+
 
 class AuthService {
   // Dirección de nuestra API Biblioteca
   static const String baseUrl =
       'http://localhost:5288/api/usuarios';
 
+  // Enviar un POST con tiempo límite.
+  // Si no hay conexión lanza SinConexionException.
+  Future<http.Response> _post(String ruta, Map<String, dynamic> datos) async {
+    try {
+      return await http
+          .post(
+            Uri.parse('$baseUrl/$ruta'),
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: jsonEncode(datos),
+          )
+          .timeout(const Duration(seconds: 10));
+    } on SocketException {
+      throw SinConexionException();
+    } on TimeoutException {
+      throw SinConexionException();
+    } on http.ClientException {
+      throw SinConexionException();
+    }
+  }
+
   Future<Map<String, dynamic>> login(
     String email,
     String password,
   ) async {
-    final url = Uri.parse('$baseUrl/login');
-
-    final respuesta = await http.post(
-      url,
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: jsonEncode({
-        'email': email,
-        'password': password,
-      }),
-    );
+    final respuesta = await _post('login', {
+      'email': email,
+      'password': password,
+    });
 
     final datos = jsonDecode(respuesta.body);
 
@@ -58,19 +97,13 @@ class AuthService {
     required String telefono,
     required String password,
   }) async {
-    final respuesta = await http.post(
-      Uri.parse('$baseUrl/registro'),
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: jsonEncode({
-        'nombre': nombre,
-        'apellido': apellido,
-        'email': email,
-        'telefono': telefono,
-        'password': password,
-      }),
-    );
+    final respuesta = await _post('registro', {
+      'nombre': nombre,
+      'apellido': apellido,
+      'email': email,
+      'telefono': telefono,
+      'password': password,
+    });
 
     if (respuesta.statusCode == 201) {
       return;
@@ -80,7 +113,7 @@ class AuthService {
     if (respuesta.statusCode == 409) {
       final datos = jsonDecode(respuesta.body);
 
-      throw Exception(
+      throw CorreoRegistradoException(
         datos['mensaje'] ?? 'El correo electrónico ya está registrado',
       );
     }
@@ -102,15 +135,9 @@ class AuthService {
   // La API lo verifica, registra al usuario si es nuevo
   // y devuelve el token JWT, igual que el login.
   Future<Map<String, dynamic>> loginConGoogle(String idToken) async {
-    final respuesta = await http.post(
-      Uri.parse('$baseUrl/google'),
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: jsonEncode({
-        'idToken': idToken,
-      }),
-    );
+    final respuesta = await _post('google', {
+      'idToken': idToken,
+    });
 
     final datos = jsonDecode(respuesta.body);
 

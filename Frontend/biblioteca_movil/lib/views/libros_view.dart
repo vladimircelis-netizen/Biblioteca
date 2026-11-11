@@ -12,6 +12,7 @@ import 'admin_view.dart';
 import '../widgets/portada_libro_widget.dart';
 import '../controllers/auth_controller.dart';
 import '../services/sesion_service.dart';
+import '../services/auth_service.dart';
 
 class LibrosView extends StatefulWidget {
   
@@ -42,6 +43,11 @@ class _LibrosViewState extends State<LibrosView> {
 
   String textoBusqueda = '';
 
+  // Cuenta creada sin internet (todavía no está en el servidor)
+  bool get _esCuentaLocal => widget.token.isEmpty;
+
+  bool _sincronizandoCuenta = false;
+
   @override
   void initState() {
     super.initState();
@@ -49,6 +55,13 @@ class _LibrosViewState extends State<LibrosView> {
     _libros = _controller.listarLibros();
 
     verificarConexion();
+
+    // Intentar registrar la cuenta local en el servidor
+    if (_esCuentaLocal) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        sincronizarCuentaLocal();
+      });
+    }
 
     _conexionSubscription =
         _connectivityService.cambiosConexion.listen((resultados) {
@@ -59,7 +72,79 @@ class _LibrosViewState extends State<LibrosView> {
           (resultado) => resultado != ConnectivityResult.none,
         );
       });
+
+      // Volvió la conexión: registrar la cuenta local
+      if (_tieneConexion) {
+        sincronizarCuentaLocal();
+      }
     });
+  }
+
+
+  // Registrar en el servidor la cuenta creada sin internet.
+  // Si lo logra, la pantalla se recarga con la sesión real.
+  Future<void> sincronizarCuentaLocal() async {
+    if (!_esCuentaLocal ||
+        _sincronizandoCuenta ||
+        ConnectivityService.modoSinConexion.value) {
+      return;
+    }
+
+    _sincronizandoCuenta = true;
+
+    final authController = AuthController();
+
+    try {
+      final registrada =
+          await authController.sincronizarCuentaPendiente();
+
+      if (!registrada || !mounted) return;
+
+      final usuario = authController.usuarioActual;
+      final token = authController.token;
+
+      if (usuario == null || token == null) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Tu cuenta quedó registrada. Catálogo actualizado.',
+          ),
+          backgroundColor: Colors.green,
+        ),
+      );
+
+      // Recargar el catálogo con la sesión del servidor
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (context) => LibrosView(
+            usuario: usuario,
+            token: token,
+          ),
+        ),
+      );
+    } on SinConexionException {
+      // Sigue sin internet: se intentará más tarde
+    } on CorreoRegistradoException catch (e) {
+      if (!mounted) return;
+
+      // El correo ya tenía otra cuenta: iniciar sesión con ella
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(
+          builder: (context) => LoginView(
+            emailInicial: widget.usuario.email,
+            mensajeInicial: e.mensaje,
+          ),
+        ),
+        (route) => false,
+      );
+    } catch (e) {
+      debugPrint('No se pudo registrar la cuenta local: $e');
+    } finally {
+      _sincronizandoCuenta = false;
+    }
   }
 
   Future<void> verificarConexion() async {
@@ -88,8 +173,10 @@ class _LibrosViewState extends State<LibrosView> {
   // Activar o desactivar el modo sin conexión (ícono de wifi)
   void cambiarModoConexion() {
     // Si se vuelve a conectar con el token vencido
-    // (se entró sin internet), hay que iniciar sesión de nuevo
+    // (se entró sin internet), hay que iniciar sesión de nuevo.
+    // Las cuentas locales no tienen token: se registran solas.
     if (ConnectivityService.modoSinConexion.value &&
+        !_esCuentaLocal &&
         Sesion(usuario: widget.usuario, token: widget.token)
             .tokenVencido) {
       ConnectivityService.establecerModoSinConexion(false);
@@ -127,6 +214,11 @@ class _LibrosViewState extends State<LibrosView> {
 
     // Volver a cargar los libros con el nuevo modo
     actualizarLibros();
+
+    // Al conectarse, registrar la cuenta local
+    if (!sinConexion) {
+      sincronizarCuentaLocal();
+    }
   }
 
   // Ícono según el modo y la conexión real del celular
@@ -207,6 +299,38 @@ class _LibrosViewState extends State<LibrosView> {
             tooltip: 'Mi cuenta',
             onSelected: (opcion) async {
               if (opcion == 'salir') {
+                // La cuenta local se pierde si se cierra sesión
+                // antes de registrarla en el servidor
+                if (_esCuentaLocal) {
+                  final confirmar = await showDialog<bool>(
+                    context: context,
+                    builder: (context) => AlertDialog(
+                      title: const Text('Cerrar sesión'),
+                      content: const Text(
+                        'Tu cuenta todavía no se ha registrado en el '
+                        'servidor porque no ha habido conexión. '
+                        'Si cierras sesión, se perderá y tendrás que '
+                        'registrarte de nuevo.',
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.pop(context, false),
+                          child: const Text('Cancelar'),
+                        ),
+                        TextButton(
+                          onPressed: () => Navigator.pop(context, true),
+                          child: const Text(
+                            'Cerrar sesión',
+                            style: TextStyle(color: Colors.red),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+
+                  if (confirmar != true) return;
+                }
+
                 // Borrar la sesión guardada y cerrar la de Google
                 await AuthController().cerrarSesion();
 
@@ -265,6 +389,29 @@ class _LibrosViewState extends State<LibrosView> {
 
       body: Column(
         children: [
+          // Aviso de cuenta creada sin internet
+          if (_esCuentaLocal)
+            Container(
+              width: double.infinity,
+              color: Colors.blue.shade50,
+              padding: const EdgeInsets.symmetric(
+                horizontal: 12,
+                vertical: 8,
+              ),
+              child: const Row(
+                children: [
+                  Icon(Icons.sync, size: 18, color: Colors.blue),
+                  SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'Tu cuenta se registrará automáticamente '
+                      'cuando tengas internet.',
+                    ),
+                  ),
+                ],
+              ),
+            ),
+
           // Aviso del modo sin conexión
           if (ConnectivityService.modoSinConexion.value)
             Container(

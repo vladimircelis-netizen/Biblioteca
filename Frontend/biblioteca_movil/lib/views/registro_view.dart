@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../config/app_colors.dart';
 import '../controllers/auth_controller.dart';
+import '../services/auth_service.dart';
+import '../services/connectivity_service.dart';
 import '../widgets/boton_google_widget.dart';
 import 'libros_view.dart';
 
@@ -26,6 +28,26 @@ class _RegistroViewState extends State<RegistroView> {
   bool _mostrarPassword = false;
   bool _cargando = false;
 
+  // El celular no tiene internet (o está en modo sin conexión)
+  bool _sinConexion = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _verificarConexion();
+  }
+
+  Future<void> _verificarConexion() async {
+    final sinConexion = ConnectivityService.modoSinConexion.value ||
+        !await ConnectivityService().tieneConexion();
+
+    if (!mounted) return;
+
+    setState(() {
+      _sinConexion = sinConexion;
+    });
+  }
+
   @override
   void dispose() {
     _nombreController.dispose();
@@ -42,9 +64,21 @@ class _RegistroViewState extends State<RegistroView> {
   Future<void> _registrarse() async {
     if (!_formKey.currentState!.validate()) return;
 
+    // Sin internet: ofrecer la cuenta sin conexión directamente
+    await _verificarConexion();
+
+    if (!mounted) return;
+
+    if (_sinConexion) {
+      await _ofrecerCuentaSinConexion();
+      return;
+    }
+
     setState(() {
       _cargando = true;
     });
+
+    var servidorSinRespuesta = false;
 
     try {
       await _authController.registrarse(
@@ -58,6 +92,9 @@ class _RegistroViewState extends State<RegistroView> {
       if (!mounted) return;
 
       _abrirCatalogo('Cuenta creada. Bienvenido');
+    } on SinConexionException {
+      // Hay wifi, pero el servidor no responde
+      servidorSinRespuesta = true;
     } catch (e) {
       _mostrarError(e);
     } finally {
@@ -66,6 +103,58 @@ class _RegistroViewState extends State<RegistroView> {
           _cargando = false;
         });
       }
+    }
+
+    if (servidorSinRespuesta && mounted) {
+      await _ofrecerCuentaSinConexion();
+    }
+  }
+
+
+  // REGISTRO SIN CONEXIÓN
+  // La cuenta se guarda en el celular y se registra sola
+  // en el servidor cuando haya internet.
+  Future<void> _ofrecerCuentaSinConexion() async {
+    final confirmar = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        icon: const Icon(Icons.cloud_off, color: Colors.orange),
+        title: const Text('No hay conexión'),
+        content: const Text(
+          'Puedes crear tu cuenta ahora en este celular. '
+          'Se registrará automáticamente cuando tengas internet.\n\n'
+          'Mientras tanto podrás ver el catálogo y leer '
+          'los libros disponibles sin conexión.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Crear sin conexión'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmar != true || !mounted) return;
+
+    try {
+      await _authController.registrarseSinConexion(
+        nombre: _nombreController.text.trim(),
+        apellido: _apellidoController.text.trim(),
+        email: _emailController.text.trim(),
+        telefono: _telefonoController.text.trim(),
+        password: _passwordController.text,
+      );
+
+      if (!mounted) return;
+
+      _abrirCatalogo('Cuenta creada sin conexión. Bienvenido');
+    } catch (e) {
+      _mostrarError(e);
     }
   }
 
@@ -172,6 +261,31 @@ class _RegistroViewState extends State<RegistroView> {
                 ),
 
                 const SizedBox(height: 24),
+
+                // Aviso: sin internet la cuenta se crea en el celular
+                if (_sinConexion) ...[
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Colors.orange.shade50,
+                      border: Border.all(color: Colors.orange),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: const Row(
+                      children: [
+                        Icon(Icons.cloud_off, color: Colors.orange),
+                        SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            'Sin conexión: tu cuenta se guardará en este '
+                            'celular y se registrará cuando tengas internet.',
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                ],
 
                 // Registro rápido con Google
                 BotonGoogleWidget(
@@ -331,7 +445,11 @@ class _RegistroViewState extends State<RegistroView> {
                     onPressed: _cargando ? null : _registrarse,
                     icon: const Icon(Icons.how_to_reg),
                     label: Text(
-                      _cargando ? 'Creando cuenta...' : 'Crear cuenta',
+                      _cargando
+                          ? 'Creando cuenta...'
+                          : _sinConexion
+                              ? 'Crear cuenta sin conexión'
+                              : 'Crear cuenta',
                     ),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: AppColors.primario,

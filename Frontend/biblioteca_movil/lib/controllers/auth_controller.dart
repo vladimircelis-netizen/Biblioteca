@@ -52,6 +52,95 @@ class AuthController {
   }
 
 
+  // Crear una cuenta sin internet.
+  // Queda guardada solo en el celular con rol Lector
+  // (puede ver el catálogo y leer) hasta que haya conexión.
+  Future<void> registrarseSinConexion({
+    required String nombre,
+    required String apellido,
+    required String email,
+    required String telefono,
+    required String password,
+  }) async {
+    final emailNormalizado = email.trim().toLowerCase();
+
+    // Datos para registrar la cuenta en el servidor más adelante
+    await _sesionService.guardarCuentaPendiente({
+      'nombre': nombre,
+      'apellido': apellido,
+      'email': emailNormalizado,
+      'telefono': telefono,
+      'password': password,
+    });
+
+    // Sesión local: sin token (id 0 hasta tener el del servidor)
+    usuarioActual = Usuario(
+      id: 0,
+      nombre: nombre,
+      apellido: apellido,
+      email: emailNormalizado,
+      rol: 'Lector',
+    );
+    token = '';
+
+    await _sesionService.guardarSesion(usuarioActual!, '');
+  }
+
+
+  // Registrar en el servidor la cuenta creada sin internet
+  // e iniciar sesión con ella.
+  // - Devuelve false si no hay ninguna cuenta pendiente.
+  // - Lanza SinConexionException si todavía no hay conexión.
+  // - Lanza CorreoRegistradoException si el correo ya tiene
+  //   otra cuenta en el servidor (la cuenta local se descarta).
+  Future<bool> sincronizarCuentaPendiente() async {
+    final datos = await _sesionService.obtenerCuentaPendiente();
+
+    if (datos == null) return false;
+
+    final email = datos['email']!;
+    final password = datos['password']!;
+
+    try {
+      // 1. Crear la cuenta en el servidor
+      await _authService.registrar(
+        nombre: datos['nombre']!,
+        apellido: datos['apellido']!,
+        email: email,
+        telefono: datos['telefono'] ?? '',
+        password: password,
+      );
+    } on CorreoRegistradoException {
+      // Puede que la cuenta ya se haya registrado en un intento
+      // anterior (por ejemplo, se cortó la conexión justo después).
+      // Si la contraseña coincide, es la misma persona.
+      try {
+        await iniciarSesion(email, password);
+      } on SinConexionException {
+        rethrow;
+      } catch (_) {
+        await cerrarSesion();
+
+        throw CorreoRegistradoException(
+          'Ya existe una cuenta con el correo $email. '
+          'Inicia sesión con tu contraseña.',
+        );
+      }
+
+      await _sesionService.eliminarCuentaPendiente();
+      return true;
+    }
+
+    // 2. Iniciar sesión: guarda la sesión con el token real
+    await iniciarSesion(email, password);
+
+    // 3. Borrar los datos pendientes (incluida la contraseña)
+    await _sesionService.eliminarCuentaPendiente();
+
+    return true;
+  }
+
+
   // Registrarse o iniciar sesión con Google.
   // Devuelve false si el usuario cancela.
   Future<bool> iniciarSesionConGoogle() async {

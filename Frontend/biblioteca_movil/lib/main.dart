@@ -16,6 +16,8 @@ Future<void> main() async {
 
 // Elegir la primera pantalla según la sesión guardada:
 // - Sin sesión: login.
+// - Cuenta creada sin internet: catálogo (se registra en el
+//   servidor desde LibrosView cuando haya conexión).
 // - Token vigente: catálogo.
 // - Token vencido sin internet: catálogo en modo sin conexión.
 // - Token vencido con internet: login para renovar la sesión.
@@ -35,7 +37,7 @@ Future<Widget> decidirPantallaInicial() async {
       );
     }
 
-    if (!sesion.tokenVencido) {
+    if (sesion.esCuentaLocal || !sesion.tokenVencido) {
       return LibrosView(
         usuario: sesion.usuario,
         token: sesion.token,

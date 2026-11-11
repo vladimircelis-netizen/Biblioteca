@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import '../models/libro.dart';
 import '../models/tipo_archivo.dart';
 import '../config/app_colors.dart';
+import '../config/catalogo_inicial.dart';
 import '../services/connectivity_service.dart';
 import '../services/descarga_service.dart';
 import '../widgets/portada_libro_widget.dart';
@@ -184,23 +185,39 @@ class _LibroDetalleViewState extends State<LibroDetalleView> {
 
 
   // LEER EL PDF O ESCUCHAR EL AUDIO
-  // Se usa el archivo descargado si existe; si no, la URL.
-  void abrirArchivo(TipoArchivo tipo) {
+  // Orden de preferencia:
+  // 1. Archivo descargado en el celular.
+  // 2. URL de Cloudinary (si hay internet).
+  // 3. Copia incluida en la app (si no hay internet).
+  Future<void> abrirArchivo(TipoArchivo tipo) async {
     final descarga = _descargas[tipo];
-    final ruta = descarga?.rutaLocal ?? _urlArchivo(tipo);
+    var ruta = descarga?.rutaLocal ?? _urlArchivo(tipo);
 
     if (ruta == null) return;
 
-    // Sin descarga y en modo sin conexión no se puede abrir
-    if (ruta.startsWith('http') &&
-        ConnectivityService.modoSinConexion.value) {
-      _mostrarMensaje(
-        'Este archivo no está descargado. '
-        'Descárgalo para usarlo sin conexión.',
-        Colors.orange,
-      );
-      return;
+    if (ruta.startsWith('http')) {
+      final sinInternet = ConnectivityService.modoSinConexion.value ||
+          !await ConnectivityService().tieneConexion();
+
+      if (!mounted) return;
+
+      if (sinInternet) {
+        final rutaIncluida = _rutaIncluida(tipo);
+
+        if (rutaIncluida == null) {
+          _mostrarMensaje(
+            'Este archivo no está descargado. '
+            'Descárgalo para usarlo sin conexión.',
+            Colors.orange,
+          );
+          return;
+        }
+
+        ruta = rutaIncluida;
+      }
     }
+
+    final rutaFinal = ruta;
 
     Navigator.push(
       context,
@@ -208,14 +225,26 @@ class _LibroDetalleViewState extends State<LibroDetalleView> {
         builder: (context) => tipo == TipoArchivo.pdf
             ? LectorPdfView(
                 titulo: libro.titulo,
-                rutaPdf: ruta,
+                rutaPdf: rutaFinal,
               )
             : ReproductorAudioView(
                 titulo: libro.titulo,
-                rutaAudio: ruta,
+                rutaAudio: rutaFinal,
               ),
       ),
     );
+  }
+
+
+  // Copia del archivo incluida en la app (mismo ISBN), si existe
+  String? _rutaIncluida(TipoArchivo tipo) {
+    final incluido = CatalogoInicial.buscarPorIsbn(libro.isbn);
+
+    if (incluido == null) return null;
+
+    return tipo == TipoArchivo.pdf
+        ? incluido.rutaPdf
+        : incluido.rutaAudio;
   }
 
 

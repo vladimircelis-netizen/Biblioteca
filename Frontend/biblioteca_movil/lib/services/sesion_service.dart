@@ -15,6 +15,10 @@ class Sesion {
     required this.token,
   });
 
+  // Cuenta creada sin internet: todavía no existe en el servidor
+  // y no tiene token
+  bool get esCuentaLocal => token.isEmpty;
+
   // El token JWT trae su fecha de vencimiento (campo "exp")
   bool get tokenVencido {
     final vencimiento = SesionService.fechaVencimiento(token);
@@ -37,6 +41,7 @@ class SesionService {
   static const String _claveUsuario = 'usuario';
   static const String _claveModoSinConexion = 'modo_sin_conexion';
   static const String _claveUltimoEmail = 'ultimo_email';
+  static const String _claveCuentaPendiente = 'cuenta_pendiente';
 
 
   Future<void> guardarSesion(Usuario usuario, String token) async {
@@ -77,10 +82,44 @@ class SesionService {
 
 
   // Borrar la sesión (el último correo se conserva
-  // para escribirlo automáticamente en el login)
+  // para escribirlo automáticamente en el login).
+  // Si la cuenta se creó sin internet y no se ha registrado
+  // en el servidor, también se pierde.
   Future<void> cerrarSesion() async {
     await _almacenamiento.delete(key: _claveToken);
     await _almacenamiento.delete(key: _claveUsuario);
+    await _almacenamiento.delete(key: _claveCuentaPendiente);
+  }
+
+
+  // CUENTA CREADA SIN CONEXIÓN
+  // Se guardan los datos del registro (cifrados) para enviarlos
+  // al servidor cuando haya internet. La contraseña se borra
+  // en cuanto la cuenta queda registrada en el servidor.
+
+  Future<void> guardarCuentaPendiente(Map<String, String> datos) async {
+    await _almacenamiento.write(
+      key: _claveCuentaPendiente,
+      value: jsonEncode(datos),
+    );
+  }
+
+  Future<Map<String, String>?> obtenerCuentaPendiente() async {
+    try {
+      final valor =
+          await _almacenamiento.read(key: _claveCuentaPendiente);
+
+      if (valor == null) return null;
+
+      return Map<String, String>.from(jsonDecode(valor));
+    } catch (e) {
+      debugPrint('No se pudo leer la cuenta pendiente: $e');
+      return null;
+    }
+  }
+
+  Future<void> eliminarCuentaPendiente() async {
+    await _almacenamiento.delete(key: _claveCuentaPendiente);
   }
 
 

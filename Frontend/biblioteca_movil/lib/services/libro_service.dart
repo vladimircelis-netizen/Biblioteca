@@ -4,9 +4,7 @@ import 'package:http/http.dart' as http;
 import '../models/libro.dart';
 import 'database_service.dart';
 import 'package:flutter/foundation.dart';
-import '../config/libros_demo.dart';
-import '../config/portadas_demo.dart';
-import '../config/audios_demo.dart';
+import '../config/catalogo_inicial.dart';
 import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'connectivity_service.dart';
 
@@ -21,7 +19,7 @@ class LibroService {
     if (ConnectivityService.modoSinConexion.value) {
       debugPrint('Modo sin conexión: libros cargados desde SQLite');
 
-      return await _databaseService.obtenerLibros();
+      return await _obtenerLibrosLocales();
     }
 
     try {
@@ -48,47 +46,32 @@ class LibroService {
         // para poder verlas sin conexión
         _guardarPortadasEnCache(libros);
 
-        // 3. Archivos de demostración (assets).
-        // Solo se usan si el libro todavía no tiene
-        // un archivo subido a Cloudinary.
+        // 3. Archivos incluidos en la app (assets).
+        // Se buscan por ISBN y solo se usan si el libro
+        // todavía no tiene ese archivo en Cloudinary.
         for (final libro in libros) {
-          final rutaPdf = LibrosDemo.obtenerRutaPdf(libro.id);
+          final incluido = CatalogoInicial.buscarPorIsbn(libro.isbn);
 
-          if (!libro.tienePdf && rutaPdf != null) {
+          if (incluido == null) continue;
+
+          if (!libro.tienePdf && incluido.tienePdf) {
             await _databaseService.guardarRutaPdf(
               libro.id,
-              rutaPdf,
-            );
-
-            debugPrint(
-              'PDF demo procesado para libro ${libro.id}: $rutaPdf',
+              incluido.rutaPdf!,
             );
           }
 
-          final rutaPortada =
-              PortadasDemo.obtenerRutaPortada(libro.id);
-
-          if (!libro.tienePortada && rutaPortada != null) {
+          if (!libro.tienePortada && incluido.tienePortada) {
             await _databaseService.guardarRutaPortada(
               libro.id,
-              rutaPortada,
-            );
-
-            debugPrint(
-              'Portada demo procesada para libro ${libro.id}: $rutaPortada',
+              incluido.rutaPortada!,
             );
           }
 
-          final rutaAudio = AudiosDemo.obtenerRutaAudio(libro.id);
-
-          if (!libro.tieneAudio && rutaAudio != null) {
+          if (!libro.tieneAudio && incluido.tieneAudio) {
             await _databaseService.guardarRutaAudio(
               libro.id,
-              rutaAudio,
-            );
-
-            debugPrint(
-              'Audio demo procesado para libro ${libro.id}: $rutaAudio',
+              incluido.rutaAudio!,
             );
           }
         }
@@ -105,8 +88,24 @@ class LibroService {
       // 4. Si falla la API, consultamos SQLite
       debugPrint('No se pudo consultar la API: $e');
 
-      return await _databaseService.obtenerLibros();
+      return await _obtenerLibrosLocales();
     }
+  }
+
+
+  // Libros guardados en SQLite.
+  // Si la app nunca se ha sincronizado (primera vez sin internet),
+  // se cargan los libros incluidos en la app.
+  Future<List<Libro>> _obtenerLibrosLocales() async {
+    final libros = await _databaseService.obtenerLibros();
+
+    if (libros.isNotEmpty) return libros;
+
+    debugPrint('Primera vez sin conexión: catálogo incluido en la app');
+
+    await _databaseService.guardarLibros(CatalogoInicial.libros);
+
+    return await _databaseService.obtenerLibros();
   }
 
 

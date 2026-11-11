@@ -1,7 +1,9 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:biblioteca_movil/config/catalogo_inicial.dart';
 import 'package:biblioteca_movil/main.dart';
 import 'package:biblioteca_movil/models/usuario.dart';
 import 'package:biblioteca_movil/services/sesion_service.dart';
@@ -66,5 +68,49 @@ void main() {
     final sesion = Sesion(usuario: usuario, token: 'no-es-un-jwt');
 
     expect(sesion.tokenVencido, isTrue);
+  });
+
+  test('Una sesión sin token es una cuenta creada sin conexión', () {
+    final local = Sesion(usuario: usuario, token: '');
+    final servidor = Sesion(
+      usuario: usuario,
+      token: crearToken(DateTime.now().add(const Duration(hours: 1))),
+    );
+
+    expect(local.esCuentaLocal, isTrue);
+    expect(servidor.esCuentaLocal, isFalse);
+  });
+
+  group('Catálogo incluido en la app', () {
+    test('Tiene los tres libros con PDF', () {
+      expect(CatalogoInicial.libros, hasLength(3));
+      expect(CatalogoInicial.libros.every((l) => l.tienePdf), isTrue);
+    });
+
+    test('Busca los libros por ISBN', () {
+      expect(
+        CatalogoInicial.buscarPorIsbn('9788420412146')?.titulo,
+        'Libertad de elegir',
+      );
+      expect(CatalogoInicial.buscarPorIsbn('0000000000'), isNull);
+    });
+
+    test('Todos sus archivos existen en la carpeta assets', () {
+      for (final libro in CatalogoInicial.libros) {
+        final rutas = [
+          libro.rutaPortada,
+          libro.rutaPdf,
+          libro.rutaAudio,
+        ].whereType<String>();
+
+        for (final ruta in rutas) {
+          expect(
+            File(ruta).existsSync(),
+            isTrue,
+            reason: 'Falta el archivo $ruta (${libro.titulo})',
+          );
+        }
+      }
+    });
   });
 }

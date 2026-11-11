@@ -12,10 +12,14 @@ class LoginView extends StatefulWidget {
   // true: se llegó al login porque el token venció
   final bool sesionVencida;
 
+  // Mensaje que se muestra al abrir el login
+  final String? mensajeInicial;
+
   const LoginView({
     super.key,
     this.emailInicial,
     this.sesionVencida = false,
+    this.mensajeInicial,
   });
 
   @override
@@ -39,17 +43,21 @@ class _LoginViewState extends State<LoginView> {
 
     _emailController.text = widget.emailInicial ?? '';
 
-    // Avisar que la sesión venció (después de dibujar la pantalla)
-    if (widget.sesionVencida) {
+    // Mostrar el aviso (después de dibujar la pantalla)
+    final mensaje = widget.mensajeInicial ??
+        (widget.sesionVencida
+            ? 'Tu sesión venció. Inicia sesión nuevamente.'
+            : null);
+
+    if (mensaje != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
 
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Tu sesión venció. Inicia sesión nuevamente.',
-            ),
+          SnackBar(
+            content: Text(mensaje),
             backgroundColor: Colors.orange,
+            duration: const Duration(seconds: 6),
           ),
         );
       });
