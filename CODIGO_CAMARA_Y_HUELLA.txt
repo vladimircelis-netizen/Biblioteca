@@ -1,0 +1,244 @@
+===============================================================================
+  BIBLIOTECA MÓVIL - DÓNDE ESTÁ EL CÓDIGO DE LA CÁMARA Y DE LA HUELLA
+===============================================================================
+
+Proyecto:   Biblioteca (Frontend Flutter + Backend .NET)
+Repositorio: https://github.com/vladimircelis-netizen/Biblioteca
+Versión:    commit fba6d77 "Ingreso con huella" (12 de noviembre de 2026)
+
+Todas las rutas son relativas a la carpeta:
+    Frontend\biblioteca_movil\
+
+IMPORTANTE: los números de línea corresponden al commit fba6d77. Si después
+se edita un archivo, las líneas pueden moverse; los nombres de las funciones
+sirven para encontrarlas con Ctrl+F.
+
+La cámara y la huella son código SOLO de la app (Flutter). El backend (.NET)
+no se modificó para ninguna de las dos.
+
+
+===============================================================================
+  PARTE 1 - CÁMARA (foto de la portada del libro)
+===============================================================================
+
+QUÉ HACE
+  Al elegir la portada de un libro aparece un menú con tres opciones:
+  "Tomar foto", "Elegir de la galería" y "Buscar archivo". La foto se
+  reduce a máximo 1200 x 1800 píxeles en JPG (calidad 85) para no superar
+  los 5 MB que acepta el backend. Después se sube a Cloudinary igual que
+  un archivo buscado.
+
+PAQUETE USADO
+  image_picker (usa la app de cámara del propio celular; no requiere
+  agregar permisos al AndroidManifest).
+
+-------------------------------------------------------------------------------
+ARCHIVO PRINCIPAL: lib\widgets\selector_archivo_widget.dart
+-------------------------------------------------------------------------------
+  Línea 7         import 'package:image_picker/image_picker.dart';
+
+  Líneas 13-14    enum _OrigenPortada { camara, galeria, archivo }
+                  De dónde se obtiene la portada.
+
+  Líneas 25-39    Dentro de seleccionarArchivo():
+                  si el archivo es una PORTADA, muestra el menú y llama a la
+                  cámara, la galería o el buscador según lo elegido.
+                    30-31  origen == camara  -> _obtenerFoto(ImageSource.camera)
+                    32-33  origen == galeria -> _obtenerFoto(ImageSource.gallery)
+                    34-35  origen == archivo -> _buscarArchivo()
+                  Para el PDF y el audio (líneas 37-38) abre directamente
+                  el buscador de archivos.
+
+  Líneas 70-77    _buscarArchivo()
+                  Buscador de archivos (paquete file_picker).
+
+  Líneas 80-126   _elegirOrigenPortada()
+                  Menú inferior (showModalBottomSheet) con las 3 opciones:
+                    línea 103  "Tomar foto"
+                    línea 111  "Elegir de la galería"
+                    línea 119  "Buscar archivo"
+
+  Líneas 129-161  _obtenerFoto()   <-- CÓDIGO DE LA CÁMARA
+                    línea 137  ImagePicker().pickImage(...)
+                    línea 139  maxWidth: 1200
+                    línea 141  imageQuality: 85
+                    línea 147  on PlatformException: si el usuario negó el
+                               permiso de cámara, muestra un mensaje en rojo.
+
+  Líneas 164-196  class _FotoPortada extends PlatformFile
+                  Convierte la foto (XFile) al mismo tipo que devuelve el
+                  buscador de archivos (PlatformFile). Así la vista previa
+                  y la subida a Cloudinary funcionan igual sin importar de
+                  dónde vino la imagen.
+
+-------------------------------------------------------------------------------
+PANTALLAS QUE USAN LA CÁMARA (llaman a seleccionarArchivo)
+-------------------------------------------------------------------------------
+  lib\views\registrar_libro_view.dart   línea 93
+  lib\views\editar_libro_view.dart      línea 128
+  lib\views\archivos_libro_view.dart    línea 58
+
+-------------------------------------------------------------------------------
+CONFIGURACIÓN
+-------------------------------------------------------------------------------
+  pubspec.yaml   línea 50   image_picker: ^1.2.4
+
+
+===============================================================================
+  PARTE 2 - INGRESO CON HUELLA
+===============================================================================
+
+QUÉ HACE
+  - La primera vez que el usuario entra, la app pregunta si quiere entrar
+    con su huella. También se activa/desactiva desde el menú de la cuenta.
+  - Al abrir la app con la sesión abierta, pide la huella antes de mostrar
+    el catálogo (pantalla "Hola, {nombre}").
+  - En el login aparece el botón "Ingresar con huella", incluso después de
+    cerrar sesión.
+  - Si el lector falla, Android ofrece el PIN o patrón del celular.
+
+CÓMO FUNCIONA POR DENTRO
+  No se guarda la contraseña. Al activar la huella se guarda una COPIA
+  CIFRADA de la sesión (token + datos del usuario) con flutter_secure_storage.
+  La huella la verifica Android y nunca sale del celular. Si otra persona
+  inicia sesión con su contraseña, la huella anterior se borra.
+
+PAQUETES USADOS
+  local_auth             (verificar la huella)
+  flutter_secure_storage (guardar la sesión cifrada)
+
+-------------------------------------------------------------------------------
+1) lib\services\huella_service.dart   (ARCHIVO NUEVO, 80 líneas)
+-------------------------------------------------------------------------------
+  Línea 9         class HuellaService
+
+  Líneas 13-25    estaDisponible()
+                  ¿El celular tiene lector y al menos una huella registrada?
+
+  Líneas 35-78    autenticar()   <-- CÓDIGO QUE PIDE LA HUELLA
+                    línea 40   _autenticacion.authenticate(...)
+                    línea 45   on LocalAuthException: traduce los errores de
+                               Android a mensajes claros:
+                      47-51  canceló / tiempo agotado  -> devuelve false
+                      53     no hay huellas registradas
+                      59     el celular no tiene lector
+                      62     demasiados intentos
+                      67     huella bloqueada
+
+-------------------------------------------------------------------------------
+2) lib\views\bloqueo_huella_view.dart   (ARCHIVO NUEVO, 207 líneas)
+-------------------------------------------------------------------------------
+  Pantalla que pide la huella al abrir la app con la sesión abierta.
+
+  Línea 12        class BloqueoHuellaView
+  Líneas 36-38    Pide la huella automáticamente al mostrarse.
+  Líneas 42-84    ingresarConHuella(): verifica la huella y abre el catálogo.
+  Líneas 88-134   entrarConOtraCuenta(): cierra sesión y olvida la huella
+                  (línea 121).
+  Líneas 138-206  Diseño de la pantalla (ícono de huella en la línea 182).
+
+-------------------------------------------------------------------------------
+3) lib\services\sesion_service.dart   (guardar la huella cifrada)
+-------------------------------------------------------------------------------
+  Líneas 45-51    Claves de almacenamiento: huella_activa, huella_preguntada,
+                  huella_token, huella_usuario.
+
+  Líneas 67-78    Dentro de guardarSesion(): si inicia sesión OTRA persona se
+                  olvida la huella anterior; si es la misma, se renueva la
+                  copia con el token nuevo.
+
+  Líneas 111-119  cerrarSesion({olvidarHuella}): cerrar sesión puede
+                  conservar la huella (para el botón del login) u olvidarla.
+
+  Líneas 122-211  Sección "INGRESO CON HUELLA":
+                    124  obtenerHuellaActiva()
+                    131  guardarHuellaActiva()   activar = guarda la copia
+                                                 cifrada de la sesión
+                    153  obtenerSesionHuella()   sesión que se abre con huella
+                    161  restaurarSesionHuella() vuelve a abrir esa sesión
+                    166  _leerSesionHuella()
+                    186  _guardarCopiaHuella()
+                    196  _olvidarHuella()
+                    204  obtenerHuellaPreguntada()
+                    209  marcarHuellaPreguntada()
+
+-------------------------------------------------------------------------------
+4) lib\controllers\auth_controller.dart
+-------------------------------------------------------------------------------
+  Líneas 170-180  cerrarSesion({olvidarHuella})
+  Líneas 183-191  iniciarSesionConHuella(): abre la sesión guardada después
+                  de verificar la huella (se usa desde el login).
+
+-------------------------------------------------------------------------------
+5) lib\views\login_view.dart   (botón "Ingresar con huella")
+-------------------------------------------------------------------------------
+  Líneas 5-6      imports de huella_service y sesion_service
+  Líneas 21-22    parámetro pedirHuella (pedir la huella al abrir la app)
+  Línea 48        Sesion? _sesionHuella
+  Línea 56        _cargarHuella() al abrir la pantalla
+  Líneas 79-93    _cargarHuella(): ¿hay una cuenta con huella activada?
+  Líneas 96-177   _ingresarConHuella()   <-- INGRESO DESDE EL LOGIN
+                  Verifica la huella, revisa si la sesión venció
+                  (con internet pide la contraseña; sin internet entra en
+                  modo lectura) y abre el catálogo.
+  Líneas 427-448  Botón "Ingresar con huella ({nombre})" en la pantalla.
+
+-------------------------------------------------------------------------------
+6) lib\views\libros_view.dart   (activar / desactivar la huella)
+-------------------------------------------------------------------------------
+  Línea 16        import de huella_service
+  Líneas 52-56    Variables de la huella (_huellaDisponible, _huellaActiva)
+  Línea 66        cargarHuella() al abrir el catálogo
+  Líneas 93-193   Sección "INGRESO CON HUELLA":
+                    97   cargarHuella()  y oferta la primera vez
+                    115  ofrecerHuella() diálogo "¿Quieres entrar con tu
+                                         huella la próxima vez?"
+                    152  cambiarHuella() activar (confirmando la huella)
+                                         o desactivar
+  Líneas 413-416  Menú de la cuenta: opción 'huella'
+  Líneas 451-457  Cerrar sesión conservando la huella
+  Líneas 490-510  Opción del menú "Activar / Desactivar ingreso con huella"
+
+-------------------------------------------------------------------------------
+7) lib\main.dart   (qué pantalla se abre al iniciar la app)
+-------------------------------------------------------------------------------
+  Línea 4         import de bloqueo_huella_view
+  Líneas 38-46    Sin sesión abierta pero con huella activada: abre el
+                  login y pide la huella automáticamente.
+  Líneas 49-64    abrirCatalogo(): con la huella activada muestra primero
+                  BloqueoHuellaView (línea 54).
+  Líneas 67 y 85  Usos de abrirCatalogo().
+
+-------------------------------------------------------------------------------
+8) CONFIGURACIÓN DE ANDROID (requisitos del paquete local_auth)
+-------------------------------------------------------------------------------
+  android\app\src\main\kotlin\com\example\biblioteca_movil\MainActivity.kt
+      Líneas 3 y 6   MainActivity hereda de FlutterFragmentActivity
+                     (antes FlutterActivity).
+
+  android\app\src\main\AndroidManifest.xml
+      Líneas 3-4     Permiso android.permission.USE_BIOMETRIC
+
+  android\app\src\main\res\values\styles.xml
+      Líneas 4-5     LaunchTheme con tema Theme.AppCompat.Light.NoActionBar
+
+  android\app\src\main\res\values-night\styles.xml
+      Líneas 4-5     LaunchTheme con tema Theme.AppCompat.NoActionBar
+
+  android\app\build.gradle.kts
+      Líneas 51-54   dependencia androidx.appcompat:appcompat:1.7.0
+
+  pubspec.yaml
+      Línea 49       flutter_secure_storage: ^11.2.0
+      Línea 51       local_auth: ^3.0.2
+
+
+===============================================================================
+  PARA PROBAR LA HUELLA EN EL CELULAR
+===============================================================================
+  1. Registrar una huella en el celular:
+     Ajustes -> Seguridad y privacidad -> Datos biométricos -> Huellas.
+  2. Iniciar sesión en la app con correo y contraseña.
+  3. Ícono de persona -> "Activar ingreso con huella" -> poner el dedo.
+  4. Cerrar la app por completo y volver a abrirla: pide la huella.
+===============================================================================
