@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'services/connectivity_service.dart';
 import 'services/sesion_service.dart';
+import 'views/bloqueo_huella_view.dart';
 import 'views/libros_view.dart';
 import 'views/login_view.dart';
 
@@ -21,6 +22,8 @@ Future<void> main() async {
 // - Token vigente: catálogo.
 // - Token vencido sin internet: catálogo en modo sin conexión.
 // - Token vencido con internet: login para renovar la sesión.
+// Si el ingreso con huella está activado, antes del catálogo
+// se pide la huella.
 Future<Widget> decidirPantallaInicial() async {
   final sesionService = SesionService();
 
@@ -32,16 +35,36 @@ Future<Widget> decidirPantallaInicial() async {
     final sesion = await sesionService.obtenerSesion();
 
     if (sesion == null) {
+      // Cerró sesión, pero con la huella activada:
+      // el login la pide apenas se abre
+      final sesionHuella = await sesionService.obtenerSesionHuella();
+
       return LoginView(
-        emailInicial: await sesionService.obtenerUltimoEmail(),
+        emailInicial: sesionHuella?.usuario.email ??
+            await sesionService.obtenerUltimoEmail(),
+        pedirHuella: sesionHuella != null,
       );
     }
 
-    if (sesion.esCuentaLocal || !sesion.tokenVencido) {
+    final huellaActiva = await sesionService.obtenerHuellaActiva();
+
+    // Catálogo, protegido con la huella si está activada
+    Widget abrirCatalogo() {
+      if (huellaActiva) {
+        return BloqueoHuellaView(
+          usuario: sesion.usuario,
+          token: sesion.token,
+        );
+      }
+
       return LibrosView(
         usuario: sesion.usuario,
         token: sesion.token,
       );
+    }
+
+    if (sesion.esCuentaLocal || !sesion.tokenVencido) {
+      return abrirCatalogo();
     }
 
     // El token venció: ¿se puede renovar ahora?
@@ -59,10 +82,7 @@ Future<Widget> decidirPantallaInicial() async {
     // No se guarda este modo: es solo para esta apertura.
     ConnectivityService.modoSinConexion.value = true;
 
-    return LibrosView(
-      usuario: sesion.usuario,
-      token: sesion.token,
-    );
+    return abrirCatalogo();
   } catch (e) {
     debugPrint('No se pudo recuperar la sesión: $e');
     return const LoginView();

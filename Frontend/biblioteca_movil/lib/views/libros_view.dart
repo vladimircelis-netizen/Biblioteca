@@ -13,6 +13,7 @@ import '../widgets/portada_libro_widget.dart';
 import '../controllers/auth_controller.dart';
 import '../services/sesion_service.dart';
 import '../services/auth_service.dart';
+import '../services/huella_service.dart';
 
 class LibrosView extends StatefulWidget {
   
@@ -48,6 +49,12 @@ class _LibrosViewState extends State<LibrosView> {
 
   bool _sincronizandoCuenta = false;
 
+  // Ingreso con huella
+  final HuellaService _huellaService = HuellaService();
+  final SesionService _sesionService = SesionService();
+  bool _huellaDisponible = false;
+  bool _huellaActiva = false;
+
   @override
   void initState() {
     super.initState();
@@ -55,6 +62,8 @@ class _LibrosViewState extends State<LibrosView> {
     _libros = _controller.listarLibros();
 
     verificarConexion();
+
+    cargarHuella();
 
     // Intentar registrar la cuenta local en el servidor
     if (_esCuentaLocal) {
@@ -78,6 +87,109 @@ class _LibrosViewState extends State<LibrosView> {
         sincronizarCuentaLocal();
       }
     });
+  }
+
+
+  // INGRESO CON HUELLA
+
+  // Consultar si el celular tiene huella y si el usuario la activó.
+  // La primera vez se le ofrece activarla.
+  Future<void> cargarHuella() async {
+    final disponible = await _huellaService.estaDisponible();
+    final activa = await _sesionService.obtenerHuellaActiva();
+    final preguntada = await _sesionService.obtenerHuellaPreguntada();
+
+    if (!mounted) return;
+
+    setState(() {
+      _huellaDisponible = disponible;
+      _huellaActiva = activa;
+    });
+
+    if (disponible && !activa && !preguntada) {
+      await ofrecerHuella();
+    }
+  }
+
+
+  Future<void> ofrecerHuella() async {
+    final aceptar = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        icon: const Icon(
+          Icons.fingerprint,
+          size: 48,
+          color: AppColors.primario,
+        ),
+        title: const Text('Ingreso con huella'),
+        content: const Text(
+          '¿Quieres entrar con tu huella la próxima vez '
+          'que abras la app?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Ahora no'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Activar'),
+          ),
+        ],
+      ),
+    );
+
+    if (aceptar == true) {
+      await cambiarHuella(true);
+    } else {
+      // Puede activarla después desde el menú de la cuenta
+      await _sesionService.marcarHuellaPreguntada();
+    }
+  }
+
+
+  // Activar (confirmando la huella) o desactivar el ingreso con huella
+  Future<void> cambiarHuella(bool activar) async {
+    try {
+      if (activar) {
+        final correcta = await _huellaService.autenticar(
+          'Confirma tu huella para activar el ingreso con huella',
+          soloHuella: true,
+        );
+
+        if (!correcta) return;
+      }
+
+      await _sesionService.guardarHuellaActiva(activar);
+
+      if (!mounted) return;
+
+      setState(() {
+        _huellaActiva = activar;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            activar
+                ? 'Ingreso con huella activado'
+                : 'Ingreso con huella desactivado',
+          ),
+          backgroundColor: Colors.green,
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            e.toString().replaceFirst('Exception: ', ''),
+          ),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
 
@@ -298,6 +410,11 @@ class _LibrosViewState extends State<LibrosView> {
             icon: const Icon(Icons.account_circle),
             tooltip: 'Mi cuenta',
             onSelected: (opcion) async {
+              if (opcion == 'huella') {
+                await cambiarHuella(!_huellaActiva);
+                return;
+              }
+
               if (opcion == 'salir') {
                 // La cuenta local se pierde si se cierra sesión
                 // antes de registrarla en el servidor
@@ -331,8 +448,13 @@ class _LibrosViewState extends State<LibrosView> {
                   if (confirmar != true) return;
                 }
 
-                // Borrar la sesión guardada y cerrar la de Google
-                await AuthController().cerrarSesion();
+                // Borrar la sesión guardada y cerrar la de Google.
+                // Si la huella está activada, el login permitirá
+                // volver a entrar con ella (salvo cuentas sin
+                // registrar en el servidor, que se pierden).
+                await AuthController().cerrarSesion(
+                  olvidarHuella: _esCuentaLocal,
+                );
 
                 if (!context.mounted) return;
 
@@ -364,6 +486,29 @@ class _LibrosViewState extends State<LibrosView> {
                 ),
               ),
               const PopupMenuDivider(),
+
+              // Activar o desactivar el ingreso con huella
+              if (_huellaDisponible)
+                PopupMenuItem<String>(
+                  value: 'huella',
+                  child: Row(
+                    children: [
+                      Icon(
+                        _huellaActiva
+                            ? Icons.fingerprint
+                            : Icons.fingerprint_outlined,
+                        color: _huellaActiva ? AppColors.exito : null,
+                      ),
+                      const SizedBox(width: 10),
+                      Text(
+                        _huellaActiva
+                            ? 'Desactivar ingreso con huella'
+                            : 'Activar ingreso con huella',
+                      ),
+                    ],
+                  ),
+                ),
+
               const PopupMenuItem<String>(
                 value: 'salir',
                 child: Row(

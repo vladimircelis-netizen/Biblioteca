@@ -167,12 +167,26 @@ class AuthController {
   bool get esAdministrador =>
       usuarioActual?.esAdministrador ?? false;
 
-  Future<void> cerrarSesion() async {
+  // Cerrar sesión.
+  // olvidarHuella = false: si la huella está activada, el usuario
+  // podrá volver a entrar con ella desde el login.
+  Future<void> cerrarSesion({bool olvidarHuella = false}) async {
     usuarioActual = null;
     token = null;
 
     // Borrar la sesión guardada y cerrar la de Google
-    await _sesionService.cerrarSesion();
+    await _sesionService.cerrarSesion(olvidarHuella: olvidarHuella);
     await _googleAuthService.cerrarSesion();
+  }
+
+
+  // INGRESAR CON HUELLA (desde el login)
+  // La huella ya fue verificada: se vuelve a abrir la sesión
+  // guardada cuando se activó la huella.
+  Future<void> iniciarSesionConHuella(Sesion sesion) async {
+    await _sesionService.restaurarSesionHuella(sesion);
+
+    usuarioActual = sesion.usuario;
+    token = sesion.token;
   }
 }

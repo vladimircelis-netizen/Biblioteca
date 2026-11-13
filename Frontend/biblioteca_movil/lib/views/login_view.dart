@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 import '../config/app_colors.dart';
 import '../controllers/auth_controller.dart';
+import '../services/connectivity_service.dart';
+import '../services/huella_service.dart';
+import '../services/sesion_service.dart';
 import '../widgets/boton_google_widget.dart';
 import 'libros_view.dart';
 import 'registro_view.dart';
@@ -15,11 +18,15 @@ class LoginView extends StatefulWidget {
   // Mensaje que se muestra al abrir el login
   final String? mensajeInicial;
 
+  // true: pedir la huella apenas se abre (al iniciar la app)
+  final bool pedirHuella;
+
   const LoginView({
     super.key,
     this.emailInicial,
     this.sesionVencida = false,
     this.mensajeInicial,
+    this.pedirHuella = false,
   });
 
   @override
@@ -37,11 +44,16 @@ class _LoginViewState extends State<LoginView> {
   bool _mostrarPassword = false;
   bool _cargando = false;
 
+  // Sesión que se puede abrir con la huella (null = no activada)
+  Sesion? _sesionHuella;
+
   @override
   void initState() {
     super.initState();
 
     _emailController.text = widget.emailInicial ?? '';
+
+    _cargarHuella();
 
     // Mostrar el aviso (después de dibujar la pantalla)
     final mensaje = widget.mensajeInicial ??
@@ -61,6 +73,106 @@ class _LoginViewState extends State<LoginView> {
           ),
         );
       });
+    }
+  }
+
+  // ¿Hay una cuenta con el ingreso con huella activado?
+  Future<void> _cargarHuella() async {
+    final sesion = await SesionService().obtenerSesionHuella();
+
+    if (sesion == null || !mounted) return;
+
+    setState(() {
+      _sesionHuella = sesion;
+    });
+
+    // Al abrir la app, pedir la huella de una vez
+    if (widget.pedirHuella) {
+      await _ingresarConHuella();
+    }
+  }
+
+
+  // INGRESAR CON HUELLA
+  Future<void> _ingresarConHuella() async {
+    final sesion = _sesionHuella;
+
+    if (sesion == null || _cargando) return;
+
+    setState(() {
+      _cargando = true;
+    });
+
+    try {
+      final correcta = await HuellaService().autenticar(
+        'Usa tu huella para entrar como ${sesion.usuario.nombre}',
+      );
+
+      if (!correcta || !mounted) return;
+
+      // La sesión venció (7 días): con internet hay que renovarla
+      // con la contraseña; sin internet se entra solo a leer.
+      if (sesion.tokenVencido) {
+        final sinInternet = ConnectivityService.modoSinConexion.value ||
+            !await ConnectivityService().tieneConexion();
+
+        if (!mounted) return;
+
+        if (!sinInternet) {
+          _emailController.text = sesion.usuario.email;
+
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Tu sesión venció. Ingresa una vez con tu contraseña '
+                'para renovarla; luego podrás seguir usando la huella.',
+              ),
+              backgroundColor: Colors.orange,
+              duration: Duration(seconds: 6),
+            ),
+          );
+          return;
+        }
+
+        ConnectivityService.modoSinConexion.value = true;
+      }
+
+      await _authController.iniciarSesionConHuella(sesion);
+
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Bienvenido, ${sesion.usuario.nombre}'),
+        ),
+      );
+
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (context) => LibrosView(
+            usuario: sesion.usuario,
+            token: sesion.token,
+          ),
+        ),
+      );
+    } catch (e) {
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            e.toString().replaceFirst('Exception: ', ''),
+          ),
+          backgroundColor: Colors.red,
+        ),
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _cargando = false;
+        });
+      }
     }
   }
 
@@ -311,6 +423,29 @@ class _LoginViewState extends State<LoginView> {
                     ),
                   ),
                 ),
+
+                // Botón ingresar con huella (si está activada)
+                if (_sesionHuella != null) ...[
+                  const SizedBox(height: 14),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: _cargando ? null : _ingresarConHuella,
+                      icon: const Icon(Icons.fingerprint, size: 28),
+                      label: Text(
+                        'Ingresar con huella '
+                        '(${_sesionHuella!.usuario.nombre})',
+                      ),
+                      style: OutlinedButton.styleFrom(
+                        foregroundColor: AppColors.primario,
+                        padding: const EdgeInsets.symmetric(
+                          vertical: 12,
+                        ),
+                        side: const BorderSide(color: AppColors.primario),
+                      ),
+                    ),
+                  ),
+                ],
 
                 if (_cargando) ...[
                   const SizedBox(height: 20),
