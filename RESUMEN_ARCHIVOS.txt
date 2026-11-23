@@ -1,0 +1,324 @@
+===============================================================================
+  BIBLIOTECA MÓVIL - PARA QUÉ SIRVE CADA ARCHIVO
+===============================================================================
+
+Proyecto:    Biblioteca (app móvil Flutter + API ASP.NET Core)
+Repositorio: https://github.com/vladimircelis-netizen/Biblioteca
+Fecha:       23 de noviembre de 2026
+
+CÓMO ESTÁ ORGANIZADO
+  Biblioteca\
+    Backend\                    API en ASP.NET Core 10 (C#), publicada en Render
+    Frontend\biblioteca_movil\  App móvil en Flutter (Dart), se instala como APK
+    biblioteca_db.sql           Respaldo antiguo de la base de datos MySQL
+
+  Flujo: Celular (app) -> API en Render -> Base de datos en TiDB Cloud
+         Las portadas, PDF y audios se guardan en Cloudinary.
+
+No se describen las carpetas que Flutter crea automáticamente para otras
+plataformas (ios, linux, macos, windows, web) porque no se usan: la app
+solo se compila para Android.
+
+
+###############################################################################
+  PARTE 1 - BACKEND (carpeta Backend\)
+###############################################################################
+
+La API sigue el patrón: Controlador -> Repositorio -> Base de datos.
+  - Controllers: reciben las peticiones HTTP de la app.
+  - DTOs: definen qué datos entran y salen de la API.
+  - Models: las tablas de la base de datos.
+  - Repositories: hacen las consultas a la base de datos.
+  - Services: lógica especial (Cloudinary, tokens, usuarios).
+
+-------------------------------------------------------------------------------
+ARRANQUE Y CONFIGURACIÓN
+-------------------------------------------------------------------------------
+Program.cs
+    Punto de inicio de la API. Conecta con MySQL, registra los repositorios
+    y servicios, y configura la seguridad con tokens JWT.
+
+BibliotecaAPI.csproj
+    Proyecto de .NET: versión (net10.0) y paquetes que usa (Entity Framework,
+    Pomelo MySQL, MySqlConnector, JWT, Cloudinary, Google.Apis.Auth).
+
+BibliotecaAPI.slnx
+    Solución de Visual Studio (abre el proyecto).
+
+appsettings.example.json
+    Plantilla de configuración SIN contraseñas. Se copia como
+    appsettings.json y se llenan los datos propios.
+
+appsettings.Production.json
+    Configuración para el servidor (Render): duración del token (7 días),
+    emisor y audiencia del JWT. No tiene contraseñas: esas van como
+    variables de entorno en Render.
+
+appsettings.json  (NO está en GitHub)
+    Configuración local con la contraseña de MySQL. Está excluido a
+    propósito para no publicar la contraseña.
+
+Properties\launchSettings.json
+    Cómo arranca la API en el computador (puerto http://localhost:5288).
+
+Dockerfile
+    Instrucciones para que Render construya y ejecute la API en un
+    contenedor Docker.
+
+.dockerignore
+    Archivos que NO entran en la imagen de Docker (bin, obj, y los
+    appsettings con contraseñas).
+
+-------------------------------------------------------------------------------
+CONTROLADORES (Controllers\)  -  las direcciones que llama la app
+-------------------------------------------------------------------------------
+LibrosController.cs        api/libros
+    Listar, ver, crear, editar y eliminar libros. Ver es público; crear,
+    editar y eliminar solo para el Administrador.
+
+AutoresController.cs       api/autores
+    Listar, ver, crear, editar y eliminar autores (mismas reglas que libros).
+
+UsuariosController.cs      api/usuarios
+    Registro, login con correo y contraseña, login con Google y perfil.
+    Devuelve el token JWT que la app usa para identificarse.
+
+ArchivosController.cs      api/archivos
+    Subir, reemplazar y eliminar la portada, el PDF y el audio de un libro
+    en Cloudinary. Solo para el Administrador.
+
+WeatherForecastController.cs
+    Ejemplo que trae la plantilla de ASP.NET. No lo usa la app; se puede
+    borrar junto con WeatherForecast.cs.
+
+-------------------------------------------------------------------------------
+DTOs (DTOs\)  -  formato de los datos que entran y salen
+-------------------------------------------------------------------------------
+CrearLibroDto.cs           Datos para crear un libro (con validaciones:
+                           ISBN de 10 o 13 dígitos, año 1450-2026...).
+ActualizarLibroDto.cs      Datos para editar un libro.
+LibroRespuestaDto.cs       Libro que se envía a la app (incluye nombre del
+                           autor y rutas de portada, PDF y audio).
+CrearAutorDto.cs           Datos para crear un autor (obligatorios, máx. 100).
+ActualizarAutorDto.cs      Datos para editar un autor.
+AutorRespuestaDto.cs       Autor que se envía a la app.
+CrearUsuarioDto.cs         Datos de registro (contraseña mínimo 8 caracteres).
+LoginUsuarioDto.cs         Correo y contraseña para iniciar sesión.
+GoogleLoginDto.cs          Token que entrega Google al iniciar sesión.
+
+-------------------------------------------------------------------------------
+MODELOS (Models\)  -  tablas de la base de datos
+-------------------------------------------------------------------------------
+Libro.cs       Título, ISBN, año, stock, autor y rutas de portada/PDF/audio.
+Autor.cs       Nombre, apellido y nacionalidad.
+Usuario.cs     Nombre, correo, contraseña cifrada, teléfono y rol
+               (Lector o Administrador).
+Prestamo.cs    Préstamos de libros. La tabla existe pero la app aún no la usa.
+
+-------------------------------------------------------------------------------
+BASE DE DATOS
+-------------------------------------------------------------------------------
+Data\AppDbContext.cs
+    Conexión de Entity Framework con la base de datos: define las tablas
+    Libros, Autores, Usuarios y Prestamos.
+
+Migrations\
+    Historial de cambios de la estructura de la base de datos:
+      20261019...InitialCreate               Crea las tablas iniciales.
+      20261104...AgregarAutenticacionUsuarios Agrega contraseña y rol.
+      20261109...AgregarRutaPortadaLibro      Agrega la portada.
+      20261109...AgregarRutaPDFyRutaAudioLibro Agrega PDF y audio.
+      AppDbContextModelSnapshot.cs            Estado actual del modelo.
+    (Los archivos .Designer.cs los genera Entity Framework.)
+
+-------------------------------------------------------------------------------
+INTERFACES Y REPOSITORIOS  -  consultas a la base de datos
+-------------------------------------------------------------------------------
+Interfaces\ILibroRepository.cs    Qué operaciones hay con libros.
+Interfaces\IAutorRepository.cs    Qué operaciones hay con autores.
+Interfaces\IUsuarioRepository.cs  Qué operaciones hay con usuarios.
+
+Repositories\LibroRepository.cs   Consultas de libros (incluye guardar y
+                                  quitar rutas de archivos).
+Repositories\AutorRepository.cs   Consultas de autores.
+Repositories\UsuarioRepository.cs Buscar, crear y actualizar usuarios.
+
+-------------------------------------------------------------------------------
+SERVICIOS (Services\)
+-------------------------------------------------------------------------------
+CloudinaryService.cs
+    Sube portadas (5 MB), PDF (10 MB) y audios MP3 (20 MB) a Cloudinary,
+    y borra archivos de Cloudinary.
+
+JwtService.cs
+    Genera el token JWT con los datos y el rol del usuario.
+
+UsuarioService.cs
+    Registro (cifra la contraseña), login y login con Google (verifica el
+    token de Google y crea la cuenta si no existe).
+
+-------------------------------------------------------------------------------
+ARCHIVOS DE PRUEBA DE LA API
+-------------------------------------------------------------------------------
+Libros.http, Autores.http, BibliotecaAPI.http
+    Peticiones de ejemplo para probar la API desde Visual Studio.
+    Nota: crear, editar y eliminar ahora exigen el token de Administrador.
+
+
+###############################################################################
+  PARTE 2 - APP MÓVIL (carpeta Frontend\biblioteca_movil\)
+###############################################################################
+
+La app sigue el patrón: Vista -> Controlador -> Servicio -> API o SQLite.
+  - views: las pantallas.
+  - controllers: coordinan acciones (login, listar libros).
+  - services: hablan con la API, la base local, Google, la huella...
+  - models: las clases de datos.
+  - widgets: piezas de pantalla reutilizables.
+  - config: configuración y datos fijos.
+
+-------------------------------------------------------------------------------
+ARRANQUE
+-------------------------------------------------------------------------------
+lib\main.dart
+    Inicio de la app. Decide la primera pantalla: login, catálogo, o la
+    pantalla de huella, según la sesión guardada y si hay internet.
+
+-------------------------------------------------------------------------------
+CONFIGURACIÓN (lib\config\)
+-------------------------------------------------------------------------------
+api_config.dart        Dirección de la API (localhost en desarrollo, Render
+                       al compilar el APK) y tiempo máximo de espera (70 s).
+app_colors.dart        Colores de la app.
+catalogo_inicial.dart  Los 3 libros que vienen dentro de la app para usarla
+                       sin internet desde la primera instalación.
+google_config.dart     ID de cliente de Google para el login con Google
+                       (pendiente de llenar).
+
+-------------------------------------------------------------------------------
+MODELOS (lib\models\)
+-------------------------------------------------------------------------------
+libro.dart         Clase Libro, conversión desde/hacia JSON y SQLite, e
+                   indicadores (tiene portada, PDF, audio).
+autor.dart         Clase Autor.
+usuario.dart       Clase Usuario (y si es Administrador).
+tipo_archivo.dart  Tipos de archivo (portada, PDF, audio) con sus
+                   extensiones, tamaño máximo e ícono.
+
+-------------------------------------------------------------------------------
+CONTROLADORES (lib\controllers\)
+-------------------------------------------------------------------------------
+auth_controller.dart
+    Inicio de sesión (correo, Google, huella), registro (normal y sin
+    conexión), registrar en el servidor la cuenta creada sin internet y
+    cerrar sesión.
+
+libro_controller.dart
+    Pide la lista de libros (con o sin SQLite).
+
+-------------------------------------------------------------------------------
+SERVICIOS (lib\services\)
+-------------------------------------------------------------------------------
+libro_service.dart         Descarga el catálogo de la API, lo guarda en
+                           SQLite y, sin internet, usa lo guardado o el
+                           catálogo incluido. Guarda las portadas en caché.
+admin_libro_service.dart   Crear, editar y eliminar libros (Administrador).
+autor_service.dart         Listar y crear autores.
+archivo_service.dart       Subir y eliminar portada, PDF y audio en la API.
+auth_service.dart          Login, registro y login con Google contra la API.
+google_auth_service.dart   Abre la ventana de Google y obtiene su token.
+sesion_service.dart        Guarda cifrados en el celular: la sesión, la
+                           cuenta creada sin internet, el modo sin conexión
+                           y la copia de la sesión para la huella.
+huella_service.dart        Pide la huella (paquete local_auth).
+database_service.dart      Base de datos SQLite del celular: libros y
+                           archivos descargados.
+descarga_service.dart      Descarga PDF y audios al celular para usarlos
+                           sin internet.
+connectivity_service.dart  Detecta si hay internet y maneja el "modo sin
+                           conexión" del ícono de wifi.
+
+-------------------------------------------------------------------------------
+PANTALLAS (lib\views\)
+-------------------------------------------------------------------------------
+Acceso
+  login_view.dart          Iniciar sesión (correo, Google o huella).
+  registro_view.dart       Crear cuenta (correo, Google o sin conexión).
+  bloqueo_huella_view.dart Pide la huella al abrir la app.
+
+Lectores
+  libros_view.dart         Catálogo: búsqueda, ícono de wifi, menú de la
+                           cuenta (huella, cerrar sesión).
+  libro_detalle_view.dart  Detalle del libro: leer, escuchar y descargar.
+  lector_pdf_view.dart     Lector de PDF (URL, archivo descargado o asset).
+  reproductor_audio_view.dart  Reproductor del audiolibro.
+
+Administración
+  admin_view.dart                Menú de administración.
+  registrar_libro_view.dart      Crear libro con portada, PDF y audio.
+  editar_libro_view.dart         Editar libro y sus archivos.
+  gestionar_libros_view.dart     Lista para editar o eliminar libros.
+  registrar_autor_view.dart      Crear autor.
+  archivos_digitales_view.dart   Libros incompletos (sin portada, PDF o
+                                 audio).
+  archivos_libro_view.dart       Agregar, ver, reemplazar y eliminar los
+                                 archivos de un libro.
+
+-------------------------------------------------------------------------------
+WIDGETS REUTILIZABLES (lib\widgets\)
+-------------------------------------------------------------------------------
+portada_libro_widget.dart    Muestra la portada (Cloudinary con caché,
+                             asset o ícono si no hay).
+selector_archivo_widget.dart Elegir archivo; para la portada ofrece cámara,
+                             galería o buscar archivo.
+boton_google_widget.dart     Botón "Continuar con Google" y separador "o".
+
+-------------------------------------------------------------------------------
+ARCHIVOS INCLUIDOS EN LA APP (assets\)
+-------------------------------------------------------------------------------
+assets\libros\pdf\     PDF de los 3 libros del catálogo incluido.
+assets\libros\mp3\     Audio de prueba (El amor en los tiempos del cólera).
+assets\portadas\       Portadas de los libros incluidos.
+
+-------------------------------------------------------------------------------
+CONFIGURACIÓN DEL PROYECTO FLUTTER
+-------------------------------------------------------------------------------
+pubspec.yaml         Nombre de la app, paquetes que usa (http, sqflite,
+                     pdfrx, just_audio, file_picker, image_picker,
+                     google_sign_in, local_auth, flutter_secure_storage...)
+                     y carpetas de assets.
+pubspec.lock         Versiones exactas instaladas (lo genera Flutter).
+analysis_options.yaml Reglas de revisión del código (flutter analyze).
+test\widget_test.dart 8 pruebas automáticas: login, sesión, cuenta sin
+                     conexión y catálogo incluido (flutter test).
+README.md            Descripción básica que crea Flutter.
+
+-------------------------------------------------------------------------------
+CONFIGURACIÓN DE ANDROID (android\)
+-------------------------------------------------------------------------------
+app\src\main\AndroidManifest.xml
+    Permisos: internet y huella (USE_BIOMETRIC).
+app\src\main\kotlin\...\MainActivity.kt
+    Actividad principal (FlutterFragmentActivity, necesaria para la huella).
+app\src\main\res\values\styles.xml y values-night\styles.xml
+    Tema de arranque (AppCompat, necesario para la huella).
+app\build.gradle.kts
+    Configuración de compilación: identificador de la app
+    (com.example.biblioteca_movil), firma y librería AppCompat.
+build.gradle.kts, settings.gradle.kts
+    Configuración general de Gradle (las genera Flutter).
+app\src\debug\ y app\src\profile\AndroidManifest.xml
+    Permisos extra solo para las versiones de prueba.
+
+
+###############################################################################
+  PARTE 3 - OTROS ARCHIVOS (carpeta Biblioteca\)
+###############################################################################
+.gitignore                 Qué NO se sube a GitHub (contraseñas, carpetas de
+                           compilación, archivos .7z).
+biblioteca_db.sql          Respaldo de la base de datos del 4 de noviembre.
+                           Está desactualizado; la base actual está en TiDB.
+CODIGO_CAMARA_Y_HUELLA.txt Archivos y líneas del código de la cámara y la
+                           huella.
+RESUMEN_ARCHIVOS.txt       Este documento.
+===============================================================================
